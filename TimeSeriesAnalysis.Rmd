@@ -90,19 +90,20 @@ The sample period begins in January 1999 when the euro was introduced, ensuring 
 
 ```{r load-data}
 # Load S&P 500 data
-sp500 <- read.csv("Data/sp500.csv")
-sp500$Date <- as.Date(sp500$Date)
+sp500 <- read.csv("Data/sp500.csv", stringsAsFactors = FALSE)
+sp500$Date <- as.Date(sp500$Date, format = "%m/%d/%Y")
 
 # Load EUR/USD data
-eurusd <- read.csv("Data/EUR_USD.csv")
-eurusd$Date <- as.Date(eurusd$Date)
+eurusd <- read.csv("Data/EUR_USD.csv", stringsAsFactors = FALSE)
+eurusd$Date <- as.Date(eurusd$Date, format = "%m/%d/%Y")
 
 # Convert EUR/USD from daily to monthly (end-of-month values)
+library(zoo)
 eurusd_zoo <- zoo(eurusd$Value, order.by = eurusd$Date)
-eurusd_monthly <- aggregate(eurusd_zoo, as.yearmon, tail, 1)
+eurusd_monthly <- aggregate(eurusd_zoo, zoo::as.yearmon, tail, 1)
 eurusd_monthly_df <- data.frame(
-  Date = as.Date(eurusd_monthly),
-  Value = coredata(eurusd_monthly)
+  Date = zoo::as.Date(zoo::as.yearmon(index(eurusd_monthly)), frac = 1),
+  Value = as.numeric(coredata(eurusd_monthly))
 )
 
 # Filter S&P 500 from 1999 onwards and merge with EUR/USD
