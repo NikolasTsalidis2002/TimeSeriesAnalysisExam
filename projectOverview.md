@@ -12,6 +12,11 @@ This paper explores how stock markets and foreign exchange markets influence eac
 
 ---
 
+## 1.5 Code inspiration
+We are goign to be inspiring ourselves for the theory and the code aon the lectures that are found in the lecture folder at the root of this project. The thoery and code present must be taken as ground truth and we must inspire ourselves on it as much as possible.
+
+---
+
 ## 2. Data We Will Use
 
 We will use **two financial time series**:
@@ -37,7 +42,8 @@ Possible options:
 We compute log‑returns as:
 
 \[
-r_t = 100 	imes \ln\left(rac{P_t}{P_{t-1}}ight)
+r_t = 100 	imes \ln\left(rac{P_t}{P_{t-1}}
+ight)
 \]
 
 ---
