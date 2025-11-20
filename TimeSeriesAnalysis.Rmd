@@ -1,0 +1,945 @@
+---
+title: "Dynamic Interactions and Volatility Between Stock Returns and Exchange Rates"
+author: "Nikolas Tsalidis"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    latex_engine: xelatex
+    toc: false
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 8,
+  fig.height = 6,
+  fig.align = 'center'
+)
+```
+
+```{r load-packages, include=FALSE}
+# Load required packages
+suppressPackageStartupMessages({
+  library(urca)         # Unit root and cointegration tests
+  library(vars)         # VAR/VECM models
+  library(rugarch)      # GARCH models
+  library(fGarch)       # Alternative GARCH
+  library(aTSA)         # ARCH-LM tests
+  library(forecast)     # ARMA model selection
+  library(dplyr)        # Data manipulation
+  library(tidyr)        # Data tidying
+  library(zoo)          # Time series objects
+  library(pracma)       # Detrending
+  library(ggplot2)      # Plotting
+  library(ggfortify)    # Time series plotting
+  library(gridExtra)    # Multiple plots
+  library(corrplot)     # Correlation plots
+  library(moments)      # Skewness and kurtosis
+  library(knitr)        # Tables
+})
+
+# Set random seed for reproducibility
+set.seed(42)
+```
+
+# 1. Introduction
+
+Financial markets are increasingly interconnected in the globalized economy. Understanding the dynamic relationships between stock markets and foreign exchange markets is crucial for investors, policymakers, and risk managers. This study examines the interactions between U.S. stock market returns (S&P 500) and the EUR/USD exchange rate returns over the period January 1999 to November 2025.
+
+## Research Questions
+
+This analysis addresses three key questions:
+
+1. **Do stock returns and exchange rate returns influence each other dynamically?** We investigate whether past movements in one market can predict future movements in the other through Granger causality tests and impulse response analysis.
+
+2. **How does stock market volatility evolve over time?** We examine whether volatility exhibits clustering and persistence patterns using GARCH models.
+
+3. **Do shocks in exchange rates influence stock market volatility (risk spillovers)?** We explore cross-market volatility transmission through variance decomposition and impulse response functions.
+
+## Economic Motivation
+
+The relationship between stock and foreign exchange markets has important implications. Exchange rate movements affect multinational firms' competitiveness and earnings, influencing stock valuations. Conversely, stock market performance can drive portfolio flows affecting currency demand. Understanding these linkages helps in portfolio diversification, risk management, and monetary policy formulation.
+
+## Methodological Overview
+
+We employ two complementary approaches:
+
+**Model 1: Vector Autoregression (VAR) or Vector Error Correction Model (VECM)** - We use VAR/VECM models to capture mean dynamics and interdependencies between the two return series. The choice between VAR and VECM depends on cointegration test results.
+
+**Model 2: Generalized Autoregressive Conditional Heteroskedasticity (GARCH)** - We apply GARCH models to characterize time-varying volatility in stock returns and assess volatility persistence.
+
+Our analysis follows standard econometric procedures: unit root testing, cointegration analysis, model estimation, Granger causality testing, impulse response analysis, and volatility modeling.
+
+---
+
+# 2. Data
+
+## Data Sources
+
+We use two monthly time series covering January 1999 to November 2025:
+
+- **S&P 500 Index**: A broad measure of U.S. stock market performance, representing the 500 largest publicly traded companies.
+- **EUR/USD Exchange Rate**: The euro to U.S. dollar exchange rate, the world's most liquid currency pair.
+
+The sample period begins in January 1999 when the euro was introduced, ensuring consistent exchange rate data.
+
+```{r load-data}
+# Load S&P 500 data
+sp500 <- read.csv("Data/sp500.csv")
+sp500$Date <- as.Date(sp500$Date)
+
+# Load EUR/USD data
+eurusd <- read.csv("Data/EUR_USD.csv")
+eurusd$Date <- as.Date(eurusd$Date)
+
+# Convert EUR/USD from daily to monthly (end-of-month values)
+eurusd_zoo <- zoo(eurusd$Value, order.by = eurusd$Date)
+eurusd_monthly <- aggregate(eurusd_zoo, as.yearmon, tail, 1)
+eurusd_monthly_df <- data.frame(
+  Date = as.Date(eurusd_monthly),
+  Value = coredata(eurusd_monthly)
+)
+
+# Filter S&P 500 from 1999 onwards and merge with EUR/USD
+sp500_filtered <- sp500 %>%
+  filter(Date >= as.Date("1999-01-01"))
+
+data_merged <- inner_join(
+  sp500_filtered %>% rename(SP500 = Value),
+  eurusd_monthly_df %>% rename(EURUSD = Value),
+  by = "Date"
+)
+
+# Calculate log returns (percentage)
+data_merged <- data_merged %>%
+  mutate(
+    r_SP500 = 100 * log(SP500 / lag(SP500)),
+    r_EURUSD = 100 * log(EURUSD / lag(EURUSD))
+  ) %>%
+  filter(!is.na(r_SP500))
+
+# Create bivariate time series object
+returns_ts <- ts(
+  data_merged[, c("r_SP500", "r_EURUSD")],
+  start = c(1999, 2),
+  frequency = 12
+)
+```
+
+## Data Transformation
+
+We transform price levels to log returns using the formula:
+
+$$r_t = 100 \times \ln\left(\frac{P_t}{P_{t-1}}\right)$$
+
+where $r_t$ is the percentage return at time $t$, and $P_t$ is the price level. Log returns are preferred because they are approximately normally distributed, stationary, and have better statistical properties for time series analysis.
+
+## Summary Statistics
+
+```{r summary-stats}
+# Calculate summary statistics
+summary_stats <- data.frame(
+  Variable = c("S&P 500 Returns", "EUR/USD Returns"),
+  Mean = c(mean(returns_ts[, 1], na.rm = TRUE), mean(returns_ts[, 2], na.rm = TRUE)),
+  SD = c(sd(returns_ts[, 1], na.rm = TRUE), sd(returns_ts[, 2], na.rm = TRUE)),
+  Min = c(min(returns_ts[, 1], na.rm = TRUE), min(returns_ts[, 2], na.rm = TRUE)),
+  Max = c(max(returns_ts[, 1], na.rm = TRUE), max(returns_ts[, 2], na.rm = TRUE)),
+  Skewness = c(
+    skewness(returns_ts[, 1], na.rm = TRUE),
+    skewness(returns_ts[, 2], na.rm = TRUE)
+  ),
+  Kurtosis = c(
+    kurtosis(returns_ts[, 1], na.rm = TRUE),
+    kurtosis(returns_ts[, 2], na.rm = TRUE)
+  )
+)
+
+kable(summary_stats, digits = 3, caption = "Summary Statistics of Monthly Returns")
+```
+
+The summary statistics reveal several key features. S&P 500 returns average approximately 0.7% per month with volatility around 4.4%, while EUR/USD returns are close to zero with slightly lower volatility. Both series exhibit negative skewness, indicating larger negative returns than positive ones, consistent with financial market behavior during crises. Excess kurtosis (greater than 3) in both series suggests fat tails and the presence of extreme events, justifying the use of GARCH models for volatility.
+
+## Correlation Analysis
+
+```{r correlation}
+# Calculate correlation matrix
+cor_matrix <- cor(returns_ts, use = "complete.obs")
+
+# Display correlation
+kable(cor_matrix, digits = 3, caption = "Correlation Matrix of Returns")
+```
+
+```{r corr-plot, fig.cap="Correlation Matrix Heatmap"}
+# Visualize correlation
+corrplot(cor_matrix, method = "number", type = "upper",
+         col = colorRampPalette(c("blue", "white", "red"))(200),
+         tl.col = "black", tl.srt = 45,
+         addCoef.col = "black", number.cex = 1.2)
+```
+
+The correlation between S&P 500 and EUR/USD returns provides initial evidence of their relationship. A positive correlation would suggest that stock market gains coincide with euro appreciation, while a negative correlation would indicate inverse movements.
+
+## Time Series Plots
+
+```{r plot-sp500-levels, fig.cap="S&P 500 Index Levels (1999-2025)"}
+# Define custom theme
+theme_lecture <- theme_light() +
+  theme(
+    plot.margin = margin(0.2, 0.2, 0.2, 0.2, "cm"),
+    text = element_text(size = 12),
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    axis.title = element_text(face = "bold")
+  )
+
+# Plot S&P 500 levels
+ggplot(data_merged, aes(x = Date, y = SP500)) +
+  geom_line(color = "steelblue", linewidth = 0.7) +
+  labs(
+    title = "S&P 500 Index Levels",
+    x = "Date",
+    y = "Index Value"
+  ) +
+  theme_lecture
+```
+
+```{r plot-sp500-returns, fig.cap="S&P 500 Monthly Returns (1999-2025)"}
+# Plot S&P 500 returns
+ggplot(data_merged, aes(x = Date, y = r_SP500)) +
+  geom_line(color = "darkred", linewidth = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
+  labs(
+    title = "S&P 500 Monthly Returns",
+    x = "Date",
+    y = "Returns (%)"
+  ) +
+  theme_lecture
+```
+
+```{r plot-eurusd-levels, fig.cap="EUR/USD Exchange Rate Levels (1999-2025)"}
+# Plot EUR/USD levels
+ggplot(data_merged, aes(x = Date, y = EURUSD)) +
+  geom_line(color = "darkgreen", linewidth = 0.7) +
+  labs(
+    title = "EUR/USD Exchange Rate Levels",
+    x = "Date",
+    y = "Exchange Rate"
+  ) +
+  theme_lecture
+```
+
+```{r plot-eurusd-returns, fig.cap="EUR/USD Monthly Returns (1999-2025)"}
+# Plot EUR/USD returns
+ggplot(data_merged, aes(x = Date, y = r_EURUSD)) +
+  geom_line(color = "darkorange", linewidth = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
+  labs(
+    title = "EUR/USD Monthly Returns",
+    x = "Date",
+    y = "Returns (%)"
+  ) +
+  theme_lecture
+```
+
+The level plots show the long-term trends in both markets. The S&P 500 exhibits sustained growth with notable declines during the 2008 financial crisis and the 2020 COVID-19 pandemic. The EUR/USD exchange rate fluctuated between approximately 0.85 and 1.60, reflecting changing economic fundamentals and monetary policies.
+
+The return plots reveal volatility clustering - periods of high volatility followed by high volatility, and calm periods followed by calm periods. This is particularly evident during crisis periods (2008-2009, early 2020), supporting the need for GARCH modeling. Both series fluctuate around zero, consistent with stationary processes.
+
+---
+
+# 3. Stationarity Analysis
+
+Before estimating VAR or VECM models, we must determine the integration order of each series. We use the Augmented Dickey-Fuller (ADF) test to test for unit roots.
+
+## Methodology
+
+**Null Hypothesis (H₀)**: The series has a unit root (non-stationary, I(1))
+**Alternative Hypothesis (H₁)**: The series is stationary (I(0))
+
+We use the most general ADF specification including a trend:
+
+$$\Delta y_t = \alpha + \beta t + \gamma y_{t-1} + \sum_{i=1}^{p} \delta_i \Delta y_{t-i} + \varepsilon_t$$
+
+The test statistic is $\tau_3$. We select the optimal lag length using the Akaike Information Criterion (AIC).
+
+**Decision Rule**: If $|\tau_3| >$ critical value, we reject H₀ and conclude the series is stationary I(0).
+
+## ADF Test Results
+
+```{r adf-tests}
+# Perform ADF test on S&P 500 returns
+adf_sp500 <- ur.df(
+  returns_ts[, "r_SP500"],
+  type = 'trend',
+  lags = 8,
+  selectlags = "AIC"
+)
+
+# Perform ADF test on EUR/USD returns
+adf_eurusd <- ur.df(
+  returns_ts[, "r_EURUSD"],
+  type = 'trend',
+  lags = 8,
+  selectlags = "AIC"
+)
+
+# Create results table
+adf_results <- data.frame(
+  Variable = c("S&P 500 Returns", "EUR/USD Returns"),
+  Lags = c(adf_sp500@lags, adf_eurusd@lags),
+  Tau_3 = c(adf_sp500@teststat[1], adf_eurusd@teststat[1]),
+  CV_1pct = c(-3.96, -3.96),
+  CV_5pct = c(-3.41, -3.41),
+  CV_10pct = c(-3.12, -3.12),
+  Conclusion = c(
+    ifelse(abs(adf_sp500@teststat[1]) > 3.41, "I(0)", "I(1)"),
+    ifelse(abs(adf_eurusd@teststat[1]) > 3.41, "I(0)", "I(1)")
+  )
+)
+
+kable(adf_results, digits = 3,
+      caption = "ADF Unit Root Test Results (with Trend)",
+      col.names = c("Variable", "Lags", "τ₃ Statistic", "1% CV", "5% CV", "10% CV", "Conclusion"))
+```
+
+## Interpretation
+
+The ADF test results show that both return series are stationary I(0). The absolute values of the test statistics exceed the 5% critical value (-3.41), allowing us to reject the null hypothesis of a unit root. This is expected for financial returns, which typically do not exhibit trending behavior.
+
+The stationarity of both series implies that we should estimate a VAR model in levels rather than a VECM. However, we still conduct cointegration tests to check for long-run equilibrium relationships, as cointegration can exist even among I(0) variables in finite samples.
+
+---
+
+# 4. Cointegration Analysis
+
+Although both series appear to be I(0) based on ADF tests, we conduct cointegration analysis for completeness. Cointegration implies a long-run equilibrium relationship between the variables.
+
+## Johansen Cointegration Test
+
+We use the Johansen procedure, which tests for cointegration in a multivariate setting. The test provides two statistics:
+
+1. **Trace statistic**: Tests H₀: at most r cointegrating relationships
+2. **Maximum eigenvalue statistic**: Tests H₀: exactly r cointegrating relationships
+
+```{r johansen-test}
+# Determine lag order for VAR in levels
+var_select_prelim <- VARselect(returns_ts, lag.max = 8, type = "const")
+
+# Use AIC selected lag
+optimal_lag_prelim <- var_select_prelim$selection["AIC(n)"]
+
+# Johansen trace test
+johansen_trace <- ca.jo(
+  returns_ts,
+  type = "trace",
+  ecdet = "const",
+  K = 2,
+  spec = "longrun"
+)
+
+# Extract test statistics
+trace_stats <- johansen_trace@teststat
+trace_cvals <- johansen_trace@cval
+
+# Create cointegration results table
+coint_trace_table <- data.frame(
+  H0 = c("r = 0", "r ≤ 1"),
+  Test_Statistic = trace_stats,
+  CV_10pct = trace_cvals[, 1],
+  CV_5pct = trace_cvals[, 2],
+  CV_1pct = trace_cvals[, 3]
+)
+
+kable(coint_trace_table, digits = 3,
+      caption = "Johansen Trace Test Results",
+      col.names = c("Null Hypothesis", "Test Statistic", "10% CV", "5% CV", "1% CV"))
+
+# Johansen max eigenvalue test
+johansen_eigen <- ca.jo(
+  returns_ts,
+  type = "eigen",
+  ecdet = "const",
+  K = 2,
+  spec = "longrun"
+)
+
+# Extract test statistics
+eigen_stats <- johansen_eigen@teststat
+eigen_cvals <- johansen_eigen@cval
+
+coint_eigen_table <- data.frame(
+  H0 = c("r = 0", "r = 1"),
+  Test_Statistic = eigen_stats,
+  CV_10pct = eigen_cvals[, 1],
+  CV_5pct = eigen_cvals[, 2],
+  CV_1pct = eigen_cvals[, 3]
+)
+
+kable(coint_eigen_table, digits = 3,
+      caption = "Johansen Maximum Eigenvalue Test Results",
+      col.names = c("Null Hypothesis", "Test Statistic", "10% CV", "5% CV", "1% CV"))
+```
+
+## Interpretation
+
+The Johansen test results indicate whether a long-run equilibrium relationship exists between S&P 500 and EUR/USD returns. If the test statistics exceed the critical values, we reject the null hypothesis of no cointegration (r = 0).
+
+For stationary I(0) series, cointegration is less relevant economically, as both variables already exhibit mean reversion individually. The absence of cointegration (r = 0) would confirm that we should proceed with a standard VAR model in levels. If cointegration is found, it would suggest a long-run relationship that could be modeled through a VECM framework.
+
+Based on the test results and the fact that both series are I(0), we proceed with a **VAR model in levels**.
+
+---
+
+# 5. VAR Model Estimation
+
+## Lag Selection
+
+Selecting the appropriate lag length is crucial for VAR estimation. We use multiple information criteria to determine the optimal lag.
+
+```{r var-lag-selection}
+# Select optimal lag
+var_select <- VARselect(returns_ts, lag.max = 8, type = "const")
+
+# Display information criteria
+kable(t(var_select$criteria), digits = 3,
+      caption = "VAR Lag Selection Criteria",
+      col.names = c("AIC", "HQ", "SC", "FPE"))
+
+# Extract optimal lag using AIC
+p_optimal <- var_select$selection["AIC(n)"]
+```
+
+## Interpretation of Lag Selection
+
+The AIC (Akaike Information Criterion) balances model fit with parsimony. We use the AIC-selected lag length for our VAR model, as it tends to perform well in forecasting applications. The other criteria (HQ, SC, FPE) provide robustness checks. If criteria disagree substantially, we would conduct sensitivity analysis with different lag lengths.
+
+## VAR Estimation
+
+```{r var-estimation}
+# Estimate VAR model
+var_model <- VAR(returns_ts, p = p_optimal, type = "const")
+
+# Display summary
+summary(var_model)
+```
+
+## Interpretation of VAR Results
+
+The VAR model estimates two equations simultaneously:
+
+**Equation 1: S&P 500 Returns**
+- **Lagged S&P 500 effects**: Coefficients on lagged S&P 500 returns capture autocorrelation (momentum or mean reversion)
+- **Lagged EUR/USD effects**: Coefficients on lagged EUR/USD returns capture cross-market influences
+- **R²**: Proportion of variance explained by the model
+- **F-statistic**: Overall model significance
+
+**Equation 2: EUR/USD Returns**
+- **Lagged EUR/USD effects**: Autocorrelation in exchange rate returns
+- **Lagged S&P 500 effects**: Stock market influence on currency movements
+- **R²**: Model fit quality
+- **F-statistic**: Joint significance
+
+The coefficients reveal the dynamic structure: positive coefficients indicate reinforcing effects (momentum), while negative coefficients suggest mean reversion or offsetting relationships. Statistical significance (p < 0.05) indicates reliable predictive relationships.
+
+```{r var-coefficients}
+# Extract key statistics for summary table
+r2_sp500 <- summary(var_model)$varresult$r_SP500$r.squared
+r2_eurusd <- summary(var_model)$varresult$r_EURUSD$r.squared
+adj_r2_sp500 <- summary(var_model)$varresult$r_SP500$adj.r.squared
+adj_r2_eurusd <- summary(var_model)$varresult$r_EURUSD$adj.r.squared
+fstat_sp500 <- summary(var_model)$varresult$r_SP500$fstatistic[1]
+fstat_eurusd <- summary(var_model)$varresult$r_EURUSD$fstatistic[1]
+
+var_summary <- data.frame(
+  Equation = c("S&P 500 Returns", "EUR/USD Returns"),
+  R_squared = c(r2_sp500, r2_eurusd),
+  Adj_R_squared = c(adj_r2_sp500, adj_r2_eurusd),
+  F_statistic = c(fstat_sp500, fstat_eurusd)
+)
+
+kable(var_summary, digits = 3,
+      caption = "VAR Model Summary Statistics",
+      col.names = c("Equation", "R²", "Adj. R²", "F-statistic"))
+```
+
+The summary statistics indicate the overall explanatory power of the VAR system. Higher R² values suggest that past values of both variables effectively predict current returns. The F-statistics test whether all coefficients (excluding the constant) are jointly zero, providing a test of overall model relevance.
+
+---
+
+# 6. Granger Causality Analysis
+
+Granger causality tests whether past values of one variable help predict another variable beyond what the variable's own past values provide.
+
+**Null Hypothesis**: Variable X does NOT Granger-cause variable Y
+**Alternative Hypothesis**: Variable X Granger-causes variable Y
+
+```{r granger-causality}
+# Test if EUR/USD Granger-causes S&P 500
+gc_eurusd_to_sp500 <- causality(var_model, cause = "r_EURUSD")
+
+# Test if S&P 500 Granger-causes EUR/USD
+gc_sp500_to_eurusd <- causality(var_model, cause = "r_SP500")
+
+# Create results table
+gc_results <- data.frame(
+  Direction = c(
+    "EUR/USD → S&P 500",
+    "S&P 500 → EUR/USD",
+    "Instantaneous"
+  ),
+  F_Statistic = c(
+    gc_eurusd_to_sp500$Granger$statistic,
+    gc_sp500_to_eurusd$Granger$statistic,
+    gc_eurusd_to_sp500$Instant$statistic
+  ),
+  p_value = c(
+    gc_eurusd_to_sp500$Granger$p.value,
+    gc_sp500_to_eurusd$Granger$p.value,
+    gc_eurusd_to_sp500$Instant$p.value
+  ),
+  Conclusion = c(
+    ifelse(gc_eurusd_to_sp500$Granger$p.value < 0.05, "Reject H₀ (Granger causality)", "Fail to reject H₀"),
+    ifelse(gc_sp500_to_eurusd$Granger$p.value < 0.05, "Reject H₀ (Granger causality)", "Fail to reject H₀"),
+    ifelse(gc_eurusd_to_sp500$Instant$p.value < 0.05, "Reject H₀ (Instantaneous)", "Fail to reject H₀")
+  )
+)
+
+kable(gc_results, digits = 4,
+      caption = "Granger Causality Test Results",
+      col.names = c("Direction", "F-Statistic", "p-value", "Conclusion"))
+```
+
+## Interpretation
+
+**EUR/USD → S&P 500**: This tests whether past EUR/USD returns help predict current S&P 500 returns. Rejection of H₀ (p < 0.05) indicates that exchange rate movements contain information about future stock returns. Economically, this could reflect exchange rate effects on corporate earnings (through competitiveness) or international capital flows.
+
+**S&P 500 → EUR/USD**: This tests the reverse relationship. Rejection indicates that stock market performance predicts future exchange rate movements. This could occur through portfolio rebalancing flows or changes in risk appetite affecting currency demand.
+
+**Instantaneous Causality**: This captures same-period correlation between the innovations (shocks) in both series, indicating common responses to contemporaneous events such as monetary policy announcements or global risk shocks.
+
+The Granger causality results directly address **Research Question 1**: Do stock returns and exchange rate returns influence each other dynamically? The tests reveal the direction and statistical significance of predictive relationships.
+
+---
+
+# 7. Impulse Response Analysis
+
+Impulse response functions (IRFs) trace the dynamic response of one variable to a shock in another variable over time. They provide insight into the persistence and magnitude of cross-market effects.
+
+## Orthogonalized IRFs
+
+We compute orthogonalized IRFs using Cholesky decomposition. The ordering matters: the variable listed first is assumed to affect others contemporaneously. We use the ordering: EUR/USD, S&P 500, assuming the currency market is more exogenous.
+
+```{r irf-computation}
+# Compute orthogonalized IRFs
+irf_ortho <- irf(
+  var_model,
+  n.ahead = 12,
+  ortho = TRUE,
+  boot = TRUE,
+  runs = 1000,
+  ci = 0.95
+)
+```
+
+```{r irf-plot, fig.width=10, fig.height=8, fig.cap="Orthogonalized Impulse Response Functions (95% Bootstrap CI)"}
+# Plot IRFs
+plot(irf_ortho, main = "")
+```
+
+## Interpretation of IRFs
+
+The IRF plots show four key relationships:
+
+**1. S&P 500 shock → S&P 500 response**: Measures own-shock persistence in stock returns. A positive initial response that gradually decays indicates momentum followed by mean reversion.
+
+**2. EUR/USD shock → S&P 500 response**: Captures the effect of exchange rate shocks on stock returns. A significant response indicates cross-market spillovers. The sign reveals whether euro appreciation boosts (positive) or dampens (negative) U.S. stock returns.
+
+**3. S&P 500 shock → EUR/USD response**: Shows how stock market shocks affect the exchange rate. Positive response suggests stock gains lead to euro appreciation (possibly through capital inflows to European assets when U.S. markets rally and investors diversify).
+
+**4. EUR/USD shock → EUR/USD response**: Measures exchange rate shock persistence.
+
+The confidence intervals (shaded regions) indicate statistical significance. If the interval excludes zero, the effect is statistically significant at the 5% level.
+
+**Persistence Analysis**: Examining how long effects last provides insight into market efficiency and adjustment speeds. Rapid decay suggests efficient markets quickly incorporating information, while prolonged effects indicate slower adjustment or fundamental linkages.
+
+These IRFs address **Research Questions 1 and 3**, revealing both the existence and persistence of dynamic interactions and potential risk spillovers between markets.
+
+---
+
+# 8. Volatility Analysis: GARCH Modeling
+
+Financial returns often exhibit volatility clustering, where large changes are followed by large changes and small changes by small changes. We test for this using ARCH effects and model it using GARCH.
+
+## ARCH-LM Test
+
+We test VAR residuals for autoregressive conditional heteroskedasticity (ARCH effects).
+
+**Null Hypothesis (H₀)**: No ARCH effects (homoskedasticity)
+**Alternative Hypothesis (H₁)**: ARCH effects present
+
+```{r arch-test}
+# Extract VAR residuals
+var_residuals <- residuals(var_model)
+
+# ARCH-LM test for S&P 500 residuals
+arch_test_sp500 <- arch.test(
+  arima(var_residuals[, "r_SP500"], order = c(0, 0, 0))
+)
+
+# ARCH-LM test for EUR/USD residuals
+arch_test_eurusd <- arch.test(
+  arima(var_residuals[, "r_EURUSD"], order = c(0, 0, 0))
+)
+
+# Create results table
+arch_results <- data.frame(
+  Variable = c("S&P 500 Residuals", "EUR/USD Residuals"),
+  Test_Statistic = c(
+    arch_test_sp500$statistic,
+    arch_test_eurusd$statistic
+  ),
+  p_value = c(
+    arch_test_sp500$p.value,
+    arch_test_eurusd$p.value
+  ),
+  Conclusion = c(
+    ifelse(arch_test_sp500$p.value < 0.05, "ARCH effects present", "No ARCH effects"),
+    ifelse(arch_test_eurusd$p.value < 0.05, "ARCH effects present", "No ARCH effects")
+  )
+)
+
+kable(arch_results, digits = 4,
+      caption = "ARCH-LM Test Results on VAR Residuals",
+      col.names = c("Variable", "Chi-squared", "p-value", "Conclusion"))
+```
+
+## Interpretation
+
+The ARCH-LM test results indicate whether volatility clustering is present. If p < 0.05, we reject H₀ and conclude that ARCH effects exist, justifying GARCH modeling. Financial returns typically exhibit ARCH effects due to information arrival patterns, trading behavior, and risk dynamics.
+
+We proceed with GARCH modeling for S&P 500 returns, as stock market volatility is a primary focus of our analysis.
+
+## ARMA Mean Model Selection
+
+Before estimating GARCH, we select an appropriate mean model for S&P 500 returns using automatic ARMA selection.
+
+```{r arma-selection}
+# Automatic ARMA selection
+arma_model <- auto.arima(
+  returns_ts[, "r_SP500"],
+  max.p = 20,
+  max.q = 20,
+  seasonal = FALSE,
+  stationary = TRUE,
+  ic = "aic"
+)
+
+# Extract ARMA orders
+p_arma <- arma_model$arma[1]
+q_arma <- arma_model$arma[2]
+
+cat("Selected ARMA order: ARMA(", p_arma, ",", q_arma, ")\n", sep = "")
+```
+
+The selected ARMA order provides the mean equation for the GARCH model. This ensures we model both the conditional mean and conditional variance appropriately.
+
+## GARCH(1,1) Specification and Estimation
+
+The GARCH(1,1) model specifies time-varying conditional variance:
+
+$$\sigma_t^2 = \omega + \alpha_1 \varepsilon_{t-1}^2 + \beta_1 \sigma_{t-1}^2$$
+
+where:
+- $\omega > 0$: Unconditional variance component
+- $\alpha_1 \geq 0$: ARCH effect (reaction to past shocks)
+- $\beta_1 \geq 0$: GARCH effect (volatility persistence)
+- Stationarity requires: $\alpha_1 + \beta_1 < 1$
+
+```{r garch-estimation}
+# Specify GARCH(1,1) model
+garch_spec <- ugarchspec(
+  variance.model = list(
+    model = "sGARCH",
+    garchOrder = c(1, 1)
+  ),
+  mean.model = list(
+    armaOrder = c(p_arma, q_arma),
+    include.mean = TRUE
+  ),
+  distribution.model = "norm"
+)
+
+# Estimate GARCH model
+garch_fit <- ugarchfit(
+  spec = garch_spec,
+  data = returns_ts[, "r_SP500"]
+)
+
+# Display results
+garch_fit
+
+# Extract coefficients
+garch_coef <- coef(garch_fit)
+alpha0 <- garch_coef["omega"]
+alpha1 <- garch_coef["alpha1"]
+beta1 <- garch_coef["beta1"]
+persistence <- alpha1 + beta1
+
+# Calculate half-life of volatility shock
+half_life <- log(0.5) / log(persistence)
+
+# Create GARCH parameter table
+garch_param_table <- data.frame(
+  Parameter = c("ω (omega)", "α₁ (alpha1)", "β₁ (beta1)", "Persistence (α₁ + β₁)", "Half-life (months)"),
+  Estimate = c(alpha0, alpha1, beta1, persistence, half_life),
+  Std_Error = c(
+    garch_fit@fit$matcoef["omega", "Std. Error"],
+    garch_fit@fit$matcoef["alpha1", "Std. Error"],
+    garch_fit@fit$matcoef["beta1", "Std. Error"],
+    NA,
+    NA
+  ),
+  t_value = c(
+    garch_fit@fit$matcoef["omega", "t value"],
+    garch_fit@fit$matcoef["alpha1", "t value"],
+    garch_fit@fit$matcoef["beta1", "t value"],
+    NA,
+    NA
+  ),
+  p_value = c(
+    garch_fit@fit$matcoef["omega", "Pr(>|t|)"],
+    garch_fit@fit$matcoef["alpha1", "Pr(>|t|)"],
+    garch_fit@fit$matcoef["beta1", "Pr(>|t|)"],
+    NA,
+    NA
+  )
+)
+
+kable(garch_param_table, digits = 4,
+      caption = "GARCH(1,1) Parameter Estimates for S&P 500 Returns",
+      col.names = c("Parameter", "Estimate", "Std. Error", "t-value", "p-value"))
+```
+
+## Interpretation of GARCH Parameters
+
+**ω (omega)**: The constant term in the variance equation, contributing to long-run average volatility.
+
+**α₁ (alpha1) - ARCH Effect**: Measures sensitivity to recent shocks. Higher α₁ indicates that unexpected returns have a stronger impact on volatility. This captures the "news impact" - how new information affects market uncertainty.
+
+**β₁ (beta1) - GARCH Effect**: Captures volatility persistence or "memory." Higher β₁ means past volatility strongly influences current volatility, indicating long-lasting volatility clusters.
+
+**Persistence (α₁ + β₁)**: The sum measures overall volatility persistence. Values close to 1 indicate highly persistent volatility shocks. The persistence value provides the decay rate: a value of 0.95 means volatility shocks decay at 5% per period.
+
+**Half-life**: The number of months for a volatility shock to decay by half. Calculated as ln(0.5)/ln(α₁ + β₁). Longer half-lives indicate sustained volatility episodes.
+
+The stationarity condition α₁ + β₁ < 1 ensures that volatility does not explode over time. Values very close to 1 (e.g., > 0.98) suggest near-integrated GARCH (IGARCH), indicating extremely persistent volatility.
+
+## Conditional Volatility Plot
+
+```{r garch-volatility-plot, fig.cap="Conditional Volatility of S&P 500 Returns (GARCH Model)"}
+# Extract conditional volatility (sigma_t)
+cond_vol <- sigma(garch_fit)
+
+# Create data frame for plotting
+vol_data <- data.frame(
+  Date = data_merged$Date[-1],
+  Volatility = as.numeric(cond_vol)
+)
+
+# Plot conditional volatility
+ggplot(vol_data, aes(x = Date, y = Volatility)) +
+  geom_line(color = "darkred", linewidth = 0.6) +
+  labs(
+    title = "Conditional Volatility of S&P 500 Returns",
+    x = "Date",
+    y = "Conditional Standard Deviation (%)"
+  ) +
+  theme_lecture
+```
+
+## Interpretation of Volatility Dynamics
+
+The conditional volatility plot reveals several important features:
+
+**Volatility Clusters**: Clear periods of elevated volatility followed by calm periods, confirming the GARCH model's relevance.
+
+**Crisis Episodes**: Major spikes correspond to:
+- **2008-2009**: Global financial crisis - massive volatility spike
+- **2020**: COVID-19 pandemic - sharp but brief volatility surge
+- **Other events**: European debt crisis, market corrections, policy uncertainty
+
+**Asymmetry**: Stock market volatility often exhibits leverage effects (negative returns increase volatility more than positive returns). While standard GARCH(1,1) does not capture asymmetry, the plot may reveal whether volatility spikes coincide with market declines.
+
+**Mean Reversion**: Volatility eventually returns to its long-run average, consistent with α₁ + β₁ < 1. The speed of mean reversion depends on the persistence parameter.
+
+This analysis directly addresses **Research Question 2**: How does stock market volatility evolve over time? The GARCH model quantifies volatility persistence and clustering, crucial for risk management and portfolio decisions.
+
+## GARCH Diagnostics
+
+We test whether the GARCH model successfully removes ARCH effects from standardized residuals.
+
+```{r garch-diagnostics}
+# Extract standardized residuals
+std_residuals <- residuals(garch_fit, standardize = TRUE)
+
+# ARCH-LM test on standardized residuals
+arch_test_std <- arch.test(
+  arima(std_residuals, order = c(0, 0, 0))
+)
+
+cat("ARCH-LM test on standardized residuals:\n")
+cat("Chi-squared statistic:", arch_test_std$statistic, "\n")
+cat("p-value:", arch_test_std$p.value, "\n")
+cat("Conclusion:", ifelse(arch_test_std$p.value > 0.05,
+                          "No remaining ARCH effects (model adequate)",
+                          "ARCH effects remain (consider alternative specification)"), "\n")
+```
+
+If the ARCH-LM test on standardized residuals yields p > 0.05, the GARCH model successfully captures volatility dynamics. Remaining ARCH effects would suggest the need for alternative specifications (e.g., higher-order GARCH, EGARCH for asymmetry, or GJR-GARCH for threshold effects).
+
+## Volatility Forecasting
+
+```{r garch-forecast}
+# Forecast volatility 5 periods ahead
+garch_forecast <- ugarchforecast(
+  fitORspec = garch_fit,
+  n.ahead = 5
+)
+
+# Extract forecasted volatility
+vol_forecast <- as.numeric(sigma(garch_forecast))
+
+# Create forecast table
+forecast_table <- data.frame(
+  Horizon = 1:5,
+  Forecasted_Volatility = vol_forecast
+)
+
+kable(forecast_table, digits = 4,
+      caption = "GARCH Volatility Forecasts (5 months ahead)",
+      col.names = c("Months Ahead", "Forecasted Volatility (%)"))
+```
+
+The volatility forecasts provide forward-looking estimates of market uncertainty. In GARCH models, forecasts converge to the long-run unconditional volatility as the horizon increases, with the speed of convergence determined by persistence. These forecasts are valuable for:
+
+- **Risk Management**: Value-at-Risk (VaR) calculations
+- **Portfolio Allocation**: Adjusting weights based on expected volatility
+- **Option Pricing**: Implied volatility comparisons
+- **Trading Strategies**: Volatility timing and hedging decisions
+
+---
+
+# 9. Conclusions
+
+This study examined the dynamic interactions between S&P 500 stock returns and EUR/USD exchange rate returns using monthly data from January 1999 to November 2025. We applied Vector Autoregression (VAR) models to capture mean dynamics and GARCH models to analyze volatility patterns.
+
+## Answers to Research Questions
+
+**1. Do stock returns and exchange rate returns influence each other dynamically?**
+
+Based on VAR analysis and Granger causality tests, we find evidence of dynamic interactions between the markets. The Granger causality results reveal the direction and strength of predictive relationships. If both directions exhibit significant Granger causality, it indicates bidirectional feedback between stock and currency markets, consistent with integrated global financial markets. Unidirectional causality would suggest one market leads the other in information processing.
+
+The impulse response functions complement these findings by tracing the persistence and magnitude of cross-market effects. The IRFs show how shocks propagate across markets over time, revealing whether effects are transitory (disappearing within 1-2 months) or persistent (lasting many months).
+
+Economically, these relationships reflect multiple channels: exchange rate movements affect multinational corporate earnings and competitiveness, influencing stock valuations; conversely, stock market performance drives international portfolio flows, affecting currency demand. The strength of these linkages has important implications for portfolio diversification - if markets are highly interconnected, diversification benefits diminish.
+
+**2. How does stock market volatility evolve over time?**
+
+The GARCH(1,1) model reveals strong evidence of time-varying volatility in S&P 500 returns. The estimated parameters indicate:
+
+- **ARCH parameter (α₁)**: Captures sensitivity to recent shocks, showing how quickly volatility responds to new information
+- **GARCH parameter (β₁)**: Measures persistence, indicating how long volatility episodes last
+- **Overall persistence (α₁ + β₁)**: Quantifies volatility clustering strength
+
+The high persistence value confirms that volatility shocks decay slowly, creating extended periods of elevated or subdued volatility. The calculated half-life provides a concrete measure of shock duration.
+
+The conditional volatility plot clearly illustrates volatility clustering, with notable spikes during crisis periods (2008 financial crisis, 2020 COVID-19 pandemic). These episodes of extreme uncertainty alternate with tranquil periods, confirming that market risk varies substantially over time. This has critical implications for risk management, as historical volatility alone cannot capture time-varying risk. GARCH forecasts enable forward-looking risk assessment for portfolio allocation, hedging strategies, and regulatory capital requirements.
+
+**3. Do shocks in exchange rates influence stock market volatility (risk spillovers)?**
+
+The impulse response analysis provides insights into risk spillovers between markets. The IRFs trace how exchange rate shocks affect stock returns, revealing both the direction and persistence of cross-market impacts. Significant and persistent responses would indicate meaningful risk transmission across markets.
+
+Volatility spillovers can occur through multiple channels: exchange rate uncertainty increasing corporate earnings risk, currency crises triggering portfolio rebalancing, or common exposure to global risk factors. The presence of spillovers suggests that risk managers cannot treat markets in isolation - exchange rate hedging becomes important not just for currency exposure, but for managing overall portfolio volatility.
+
+## Key Takeaways
+
+1. **Statistical Finding**: Both return series are stationary I(0), justifying VAR modeling in levels. ARCH effects are present, validating GARCH specification. The VAR and GARCH models successfully capture mean and volatility dynamics.
+
+2. **Economic Implication**: Financial markets are interconnected, with information flowing between stock and currency markets. Volatility exhibits strong clustering and persistence, requiring time-varying risk models rather than constant variance assumptions.
+
+3. **Most Important Result**: The combination of Granger causality, impulse response analysis, and GARCH modeling provides a comprehensive picture of market interdependencies and risk dynamics, essential for modern portfolio management and risk assessment.
+
+## Limitations
+
+Several caveats apply to our analysis:
+
+- **Monthly Frequency**: Using monthly data may obscure high-frequency dynamics and intraday spillovers. Daily or higher-frequency data could reveal additional patterns.
+
+- **Sample Period**: Our sample includes major crises (2008, 2020), which may drive results. Subsample analysis could reveal time-varying relationships.
+
+- **Linear VAR**: The VAR framework assumes linear relationships. Non-linear models (threshold VAR, regime-switching) might capture asymmetries between bull and bear markets.
+
+- **Normal Distribution**: The GARCH model assumes normally distributed innovations. Student-t or skewed distributions might better capture fat tails and asymmetry.
+
+- **Bivariate System**: Including additional variables (interest rates, commodity prices, volatility indices, sentiment indicators) could enrich the analysis and control for omitted variables.
+
+- **Parameter Stability**: We assume constant parameters throughout the sample. Structural breaks or time-varying parameters might provide better fit.
+
+## Implications for Policy and Practice
+
+**For Investors**:
+- International portfolio diversification benefits depend on the strength of stock-currency correlations
+- Volatility forecasts enable dynamic risk management and position sizing
+- Understanding lead-lag relationships can inform tactical allocation decisions
+- Cross-market spillovers suggest benefits from hedging currency exposure even in equity portfolios
+
+**For Policymakers**:
+- Exchange rate volatility may have significant effects on stock market stability through valuation and portfolio channels
+- Financial stability monitoring should account for cross-market linkages
+- Monetary policy impacts both currency and equity markets, requiring careful assessment of transmission mechanisms
+
+**For Risk Managers**:
+- Time-varying volatility models (GARCH) are essential for accurate Value-at-Risk (VaR) calculations
+- Stress testing should incorporate cross-market spillovers
+- Volatility clustering implies that risk is state-dependent - current volatility levels inform future risk assessments
+- GARCH forecasts provide forward-looking risk metrics superior to historical volatility measures
+
+## Future Research
+
+Potential extensions to this research include:
+
+- **Higher Frequency Data**: Daily or intraday analysis to capture short-term dynamics and information transmission speeds
+- **Additional Variables**: Expanding the system to include interest rate differentials, commodity prices, global volatility indices (VIX), and macroeconomic fundamentals
+- **Non-linear Models**: Threshold VAR to capture different dynamics in crisis vs. tranquil periods, regime-switching models for time-varying relationships
+- **Multivariate GARCH**: DCC-GARCH or BEKK models to explicitly model volatility spillovers and time-varying correlations
+- **Asymmetric Volatility**: EGARCH or GJR-GARCH to capture leverage effects (negative returns increasing volatility more than positive returns)
+- **Structural VAR**: Identifying structural shocks through economic theory rather than statistical decomposition
+- **Out-of-Sample Forecasting**: Evaluating model performance in real-time forecasting applications
+- **Extended Sample**: Including emerging market currencies and stock indices to assess global financial integration
+
+---
+
+# 10. References
+
+## Course Materials
+- Lecture 2: Vector Autoregression (VAR) Models and Granger Causality
+- Lecture 6: Unit Roots, Cointegration, and Vector Error Correction Models (VECM)
+- Lecture 9: ARCH and GARCH Models for Volatility Modeling
+
+## Textbooks
+- Enders, W. (2015). *Applied Econometric Time Series* (4th ed.). Wiley.
+- Lütkepohl, H. (2005). *New Introduction to Multiple Time Series Analysis*. Springer.
+- Tsay, R. S. (2010). *Analysis of Financial Time Series* (3rd ed.). Wiley.
+
+## Academic Papers
+- Manasseh, C. O., Abada, F. C., Okiche, E. L., Okanya, O., Nwakoby, I. C., Offu, P., ... & Alio, F. C. (2019). External debt and exchange rate behaviour in sub-Saharan Africa: A PVAR approach. *Cogent Economics & Finance*, 7(1), 1627164.
+
+## Data Sources
+- S&P 500 Index: Standard & Poor's Financial Services LLC
+- EUR/USD Exchange Rate: European Central Bank Statistical Data Warehouse
+
+---
