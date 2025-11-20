@@ -29,7 +29,7 @@ suppressPackageStartupMessages({
   library(vars)         # VAR/VECM models
   library(rugarch)      # GARCH models
   library(fGarch)       # Alternative GARCH
-  library(aTSA)         # ARCH-LM tests
+  library(FinTS)        # ARCH-LM tests
   library(forecast)     # ARMA model selection
   library(dplyr)        # Data manipulation
   library(tidyr)        # Data tidying
@@ -586,14 +586,10 @@ We test VAR residuals for autoregressive conditional heteroskedasticity (ARCH ef
 var_residuals <- residuals(var_model)
 
 # ARCH-LM test for S&P 500 residuals
-arch_test_sp500 <- arch.test(
-  arima(var_residuals[, "r_SP500"], order = c(0, 0, 0))
-)
+arch_test_sp500 <- ArchTest(var_residuals[, "r_SP500"], lags = 12)
 
 # ARCH-LM test for EUR/USD residuals
-arch_test_eurusd <- arch.test(
-  arima(var_residuals[, "r_EURUSD"], order = c(0, 0, 0))
-)
+arch_test_eurusd <- ArchTest(var_residuals[, "r_EURUSD"], lags = 12)
 
 # Create results table
 arch_results <- data.frame(
@@ -787,9 +783,7 @@ We test whether the GARCH model successfully removes ARCH effects from standardi
 std_residuals <- residuals(garch_fit, standardize = TRUE)
 
 # ARCH-LM test on standardized residuals
-arch_test_std <- arch.test(
-  arima(std_residuals, order = c(0, 0, 0))
-)
+arch_test_std <- ArchTest(as.numeric(std_residuals), lags = 12)
 
 cat("ARCH-LM test on standardized residuals:\n")
 cat("Chi-squared statistic:", arch_test_std$statistic, "\n")
