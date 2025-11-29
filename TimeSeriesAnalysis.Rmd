@@ -10,6 +10,10 @@ output:
     toc: true
     toc_float: true
 ---
+```{r}
+rm(list = ls())
+```
+
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(
@@ -55,7 +59,7 @@ Financial markets are increasingly interconnected in the globalized economy. Und
 
 This analysis addresses three key questions:
 
-1. **Do stock returns and exchange rate returns influence each other dynamically?** We investigate whether past movements in one market can predict future movements in the other through Granger causality tests and impulse response analysis.
+1. **Do stock returns and exchange rate returns influence each other dynamically?** We investigate whether past movements in one market can predict future movements in the other through impulse response analysis.
 
 2. **How does stock market volatility evolve over time?** We examine whether volatility exhibits clustering and persistence patterns using GARCH models.
 
@@ -67,13 +71,15 @@ The relationship between stock and foreign exchange markets has important implic
 
 ## Methodological Overview
 
-We employ two complementary approaches:
+We employ two complementary approaches that address different aspects of financial time series:
 
-**Model 1: Vector Autoregression (VAR) or Vector Error Correction Model (VECM)** - We use VAR/VECM models to capture mean dynamics and interdependencies between the two return series. The choice between VAR and VECM depends on cointegration test results.
+**Model 1: Vector Autoregression (VAR)** - We use VAR models to capture the **conditional mean dynamics** and interdependencies between S&P 500 and EUR/USD returns. This bivariate model reveals how past values of both variables jointly predict future returns, addressing Research Questions 1 and 3. The choice between VAR and VECM depends on cointegration test results.
 
-**Model 2: Generalized Autoregressive Conditional Heteroskedasticity (GARCH)** - We apply GARCH models to characterize time-varying volatility in stock returns and assess volatility persistence.
+**Model 2: ARMA-GARCH** - We apply univariate ARMA-GARCH models to characterize the **conditional variance dynamics** (time-varying volatility) in S&P 500 returns, addressing Research Question 2. While VAR models the mean, GARCH captures volatility clustering - a stylized fact of financial returns that VAR cannot model.
 
-Our analysis follows standard econometric procedures: unit root testing, cointegration analysis, model estimation, Granger causality testing, impulse response analysis, and volatility modeling.
+These two models are complementary: VAR captures how markets influence each other's returns (mean), while GARCH captures how volatility evolves over time (variance). This separation follows standard practice in financial econometrics.
+
+Our analysis follows standard econometric procedures: unit root testing, cointegration analysis, VAR estimation, impulse response analysis, and volatility modeling with GARCH.
 
 ---
 
@@ -116,11 +122,11 @@ data_merged <- inner_join(
   by = "Date"
 )
 
-# Calculate log returns (percentage)
+# Calculate log returns using differencing
 data_merged <- data_merged %>%
   mutate(
-    r_SP500 = 100 * log(SP500 / lag(SP500)),
-    r_EURUSD = 100 * log(EURUSD / lag(EURUSD))
+    r_SP500 = c(NA, diff(log(SP500))),
+    r_EURUSD = c(NA, diff(log(EURUSD)))
   ) %>%
   filter(!is.na(r_SP500))
 
@@ -134,11 +140,11 @@ returns_ts <- ts(
 
 ## Data Transformation
 
-We transform price levels to log returns using the formula:
+We transform price levels to log returns using differencing:
 
-$$r_t = 100 \times \ln\left(\frac{P_t}{P_{t-1}}\right)$$
+$$r_t = \Delta \ln(P_t) = \ln(P_t) - \ln(P_{t-1})$$
 
-where $r_t$ is the percentage return at time $t$, and $P_t$ is the price level. Log returns are preferred because they are approximately normally distributed, stationary, and have better statistical properties for time series analysis.
+where $r_t$ is the log return at time $t$, and $P_t$ is the price level. This is consistent with the differencing approach discussed in the lectures for achieving stationarity. Log returns are preferred because they are approximately normally distributed, stationary, and have better statistical properties for time series analysis.
 
 ## Summary Statistics
 
@@ -175,13 +181,6 @@ cor_matrix <- cor(returns_ts, use = "complete.obs")
 kable(cor_matrix, digits = 3, caption = "Correlation Matrix of Returns")
 ```
 
-```{r corr-plot, fig.cap="Correlation Matrix Heatmap"}
-# Visualize correlation
-corrplot(cor_matrix, method = "number", type = "upper",
-         col = colorRampPalette(c("blue", "white", "red"))(200),
-         tl.col = "black", tl.srt = 45,
-         addCoef.col = "black", number.cex = 1.2)
-```
 
 The correlation between S&P 500 and EUR/USD returns provides initial evidence of their relationship. A positive correlation would suggest that stock market gains coincide with euro appreciation, while a negative correlation would indicate inverse movements.
 
@@ -216,7 +215,7 @@ ggplot(data_merged, aes(x = Date, y = r_SP500)) +
   labs(
     title = "S&P 500 Monthly Returns",
     x = "Date",
-    y = "Returns (%)"
+    y = "Log Returns"
   ) +
   theme_lecture
 ```
@@ -241,7 +240,7 @@ ggplot(data_merged, aes(x = Date, y = r_EURUSD)) +
   labs(
     title = "EUR/USD Monthly Returns",
     x = "Date",
-    y = "Returns (%)"
+    y = "Log Returns"
   ) +
   theme_lecture
 ```
@@ -254,144 +253,382 @@ The return plots reveal volatility clustering - periods of high volatility follo
 
 # 3. Stationarity Analysis
 
-Before estimating VAR or VECM models, we must determine the integration order of each series. We use the Augmented Dickey-Fuller (ADF) test to test for unit roots.
+Before estimating VAR or VECM models, we must determine the integration order of each series. We use the Augmented Dickey-Fuller (ADF) test to test for unit roots. Following proper econometric procedure, we first test the original price levels, then test the transformed (log-differenced) series.
 
 ## Methodology
 
 **Null Hypothesis (H₀)**: The series has a unit root (non-stationary, I(1))
 **Alternative Hypothesis (H₁)**: The series is stationary (I(0))
 
-We use the most general ADF specification including a trend:
+We follow the sequential testing procedure to determine the appropriate specification:
 
-$$\Delta y_t = \alpha + \beta t + \gamma y_{t-1} + \sum_{i=1}^{p} \delta_i \Delta y_{t-i} + \varepsilon_t$$
+1. **Start with trend model**: Test using τ₃ and φ₃
+   - If τ₃ rejects → I(0), stop
+   - If φ₃ significant → trend needed, keep specification
+   - If φ₃ not significant → trend not needed, step down
 
-The test statistic is $\tau_3$. We select the optimal lag length using the Akaike Information Criterion (AIC).
+2. **Test with drift only**: Test using τ₂ and φ₁
+   - If τ₂ rejects → I(0), stop
+   - If φ₁ significant → drift needed, keep specification
+   - If φ₁ not significant → drift not needed, step down
 
-**Decision Rule**: If $|\tau_3| >$ critical value, we reject H₀ and conclude the series is stationary I(0).
+3. **Test with no deterministic components**: Test using τ₁
+   - If τ₁ rejects → I(0)
+   - If τ₁ fails to reject → I(1)
 
-## ADF Test Results
+```{r adf-function}
+# Sequential ADF testing function with dynamic critical values
+# Tests against 1%, then 5%, then 10% critical values sequentially
+sequential_adf_test <- function(series, series_name, max_lags = 8) {
+  sig_levels <- c("1pct", "5pct", "10pct")
 
-```{r adf-tests}
-# Perform ADF test on S&P 500 returns
-adf_sp500 <- ur.df(
-  returns_ts[, "r_SP500"],
-  type = 'trend',
-  lags = 8,
-  selectlags = "AIC"
-)
+  # Step 1: Test with trend
+  adf_trend <- ur.df(series, type = 'trend', lags = max_lags, selectlags = "AIC")
+  cat("\n===", series_name, "- ADF Test with Trend ===\n")
+  print(summary(adf_trend))
 
-# Perform ADF test on EUR/USD returns
-adf_eurusd <- ur.df(
-  returns_ts[, "r_EURUSD"],
-  type = 'trend',
-  lags = 8,
-  selectlags = "AIC"
-)
+  # Extract test statistics
+  tau3 <- adf_trend@teststat[1, "tau3"]
+  phi3 <- adf_trend@teststat[1, "phi3"]
 
-# Create results table
-adf_results <- data.frame(
-  Variable = c("S&P 500 Returns", "EUR/USD Returns"),
-  Lags = c(adf_sp500@lags, adf_eurusd@lags),
-  Tau_3 = c(adf_sp500@teststat[1], adf_eurusd@teststat[1]),
-  CV_1pct = c(-3.96, -3.96),
-  CV_5pct = c(-3.41, -3.41),
-  CV_10pct = c(-3.12, -3.12),
-  Conclusion = c(
-    ifelse(abs(adf_sp500@teststat[1]) > 3.41, "I(0)", "I(1)"),
-    ifelse(abs(adf_eurusd@teststat[1]) > 3.41, "I(0)", "I(1)")
-  )
-)
+  # Check tau3 against critical values sequentially (1% -> 5% -> 10%)
+  for (sig in sig_levels) {
+    tau3_cv <- adf_trend@cval["tau3", sig]
+    if (tau3 < tau3_cv) {
+      return(list(conclusion = "I(0)", specification = "trend", test = adf_trend,
+                  message = paste("τ₃ =", round(tau3, 3), "< CV =", round(tau3_cv, 3), "(", sig, ") → Reject H₀, series is I(0)")))
+    }
+  }
 
-kable(adf_results, digits = 3,
-      caption = "ADF Unit Root Test Results (with Trend)",
-      col.names = c("Variable", "Lags", "τ₃ Statistic", "1% CV", "5% CV", "10% CV", "Conclusion"))
+  # Check phi3 against critical values sequentially (1% -> 5% -> 10%)
+  for (sig in sig_levels) {
+    phi3_cv <- adf_trend@cval["phi3", sig]
+    if (phi3 > phi3_cv) {
+      return(list(conclusion = "I(1)", specification = "trend", test = adf_trend,
+                  message = paste("φ₃ =", round(phi3, 3), "> CV =", round(phi3_cv, 3), "(", sig, ") → Trend significant, keep specification. Series is I(1)")))
+    }
+  }
+
+  phi3_cv_10 <- adf_trend@cval["phi3", "10pct"]
+  cat("\nφ₃ =", round(phi3, 3), "< CV =", round(phi3_cv_10, 3), "(10pct) → Trend not needed, stepping down to drift\n")
+
+  # Step 2: Test with drift only
+  adf_drift <- ur.df(series, type = 'drift', lags = max_lags, selectlags = "AIC")
+  cat("\n===", series_name, "- ADF Test with Drift ===\n")
+  print(summary(adf_drift))
+
+  tau2 <- adf_drift@teststat[1, "tau2"]
+  phi1 <- adf_drift@teststat[1, "phi1"]
+
+  # Check tau2 against critical values sequentially (1% -> 5% -> 10%)
+  for (sig in sig_levels) {
+    tau2_cv <- adf_drift@cval["tau2", sig]
+    if (tau2 < tau2_cv) {
+      return(list(conclusion = "I(0)", specification = "drift", test = adf_drift,
+                  message = paste("τ₂ =", round(tau2, 3), "< CV =", round(tau2_cv, 3), "(", sig, ") → Reject H₀, series is I(0)")))
+    }
+  }
+
+  # Check phi1 against critical values sequentially (1% -> 5% -> 10%)
+  for (sig in sig_levels) {
+    phi1_cv <- adf_drift@cval["phi1", sig]
+    if (phi1 > phi1_cv) {
+      return(list(conclusion = "I(1)", specification = "drift", test = adf_drift,
+                  message = paste("φ₁ =", round(phi1, 3), "> CV =", round(phi1_cv, 3), "(", sig, ") → Drift significant, keep specification. Series is I(1)")))
+    }
+  }
+
+  phi1_cv_10 <- adf_drift@cval["phi1", "10pct"]
+  cat("\nφ₁ =", round(phi1, 3), "< CV =", round(phi1_cv_10, 3), "(10pct) → Drift not needed, stepping down to none\n")
+
+  # Step 3: Test with no deterministic components
+  adf_none <- ur.df(series, type = 'none', lags = max_lags, selectlags = "AIC")
+  cat("\n===", series_name, "- ADF Test with None ===\n")
+  print(summary(adf_none))
+
+  tau1 <- adf_none@teststat[1, "tau1"]
+
+  # Check tau1 against critical values sequentially (1% -> 5% -> 10%)
+  for (sig in sig_levels) {
+    tau1_cv <- adf_none@cval["tau1", sig]
+    if (tau1 < tau1_cv) {
+      return(list(conclusion = "I(0)", specification = "none", test = adf_none,
+                  message = paste("τ₁ =", round(tau1, 3), "< CV =", round(tau1_cv, 3), "(", sig, ") → Reject H₀, series is I(0)")))
+    }
+  }
+
+  tau1_cv_10 <- adf_none@cval["tau1", "10pct"]
+  return(list(conclusion = "I(1)", specification = "none", test = adf_none,
+              message = paste("τ₁ =", round(tau1, 3), "> CV =", round(tau1_cv_10, 3), "(10pct) → Fail to reject H₀, series is I(1)")))
+}
+
+# Sequential ADF test for returns (starts from drift, skips trend)
+# Used for already-differenced data where trend was rejected in levels
+# Tests against 1%, then 5%, then 10% critical values sequentially
+sequential_adf_test_returns <- function(series, series_name, max_lags = 8) {
+  sig_levels <- c("1pct", "5pct", "10pct")
+
+  # Step 1: Test with drift (skip trend for differenced data)
+  adf_drift <- ur.df(series, type = 'drift', lags = max_lags, selectlags = "AIC")
+  cat("\n===", series_name, "- ADF Test with Drift ===\n")
+  print(summary(adf_drift))
+
+  tau2 <- adf_drift@teststat[1, "tau2"]
+  phi1 <- adf_drift@teststat[1, "phi1"]
+
+  # Check tau2 against critical values sequentially (1% -> 5% -> 10%)
+  for (sig in sig_levels) {
+    tau2_cv <- adf_drift@cval["tau2", sig]
+    if (tau2 < tau2_cv) {
+      return(list(conclusion = "I(0)", specification = "drift", test = adf_drift,
+                  message = paste("τ₂ =", round(tau2, 3), "< CV =", round(tau2_cv, 3), "(", sig, ") → Reject H₀, series is I(0)")))
+    }
+  }
+
+  # Check phi1 against critical values sequentially (1% -> 5% -> 10%)
+  for (sig in sig_levels) {
+    phi1_cv <- adf_drift@cval["phi1", sig]
+    if (phi1 > phi1_cv) {
+      return(list(conclusion = "I(1)", specification = "drift", test = adf_drift,
+                  message = paste("φ₁ =", round(phi1, 3), "> CV =", round(phi1_cv, 3), "(", sig, ") → Drift significant, keep specification. Series is I(1)")))
+    }
+  }
+
+  phi1_cv_10 <- adf_drift@cval["phi1", "10pct"]
+  cat("\nφ₁ =", round(phi1, 3), "< CV =", round(phi1_cv_10, 3), "(10pct) → Drift not needed, stepping down to none\n")
+
+  # Step 2: Test with no deterministic components
+  adf_none <- ur.df(series, type = 'none', lags = max_lags, selectlags = "AIC")
+  cat("\n===", series_name, "- ADF Test with None ===\n")
+  print(summary(adf_none))
+
+  tau1 <- adf_none@teststat[1, "tau1"]
+
+  # Check tau1 against critical values sequentially (1% -> 5% -> 10%)
+  for (sig in sig_levels) {
+    tau1_cv <- adf_none@cval["tau1", sig]
+    if (tau1 < tau1_cv) {
+      return(list(conclusion = "I(0)", specification = "none", test = adf_none,
+                  message = paste("τ₁ =", round(tau1, 3), "< CV =", round(tau1_cv, 3), "(", sig, ") → Reject H₀, series is I(0)")))
+    }
+  }
+
+  tau1_cv_10 <- adf_none@cval["tau1", "10pct"]
+  return(list(conclusion = "I(1)", specification = "none", test = adf_none,
+              message = paste("τ₁ =", round(tau1, 3), "> CV =", round(tau1_cv_10, 3), "(10pct) → Fail to reject H₀, series is I(1)")))
+}
 ```
 
-## Interpretation
+## Step 1: ADF Test on Original Price Levels
 
-The ADF test results show that both return series are stationary I(0). The absolute values of the test statistics exceed the 5% critical value (-3.41), allowing us to reject the null hypothesis of a unit root. This is expected for financial returns, which typically do not exhibit trending behavior.
+We first test the original price series (S&P 500 index and EUR/USD exchange rate) to determine if they contain unit roots.
 
-The stationarity of both series implies that we should estimate a VAR model in levels rather than a VECM. However, we still conduct cointegration tests to check for long-run equilibrium relationships, as cointegration can exist even among I(0) variables in finite samples.
+### S&P 500 Levels
+
+```{r adf-sp500-levels}
+result_sp500_levels <- sequential_adf_test(data_merged$SP500, "S&P 500 Levels")
+cat("\n*** CONCLUSION:", result_sp500_levels$message, "***\n")
+```
+
+### EUR/USD Levels
+
+```{r adf-eurusd-levels}
+result_eurusd_levels <- sequential_adf_test(data_merged$EURUSD, "EUR/USD Levels")
+cat("\n*** CONCLUSION:", result_eurusd_levels$message, "***\n")
+```
+
+### Interpretation of Level Tests
+
+The sequential ADF testing procedure on the original price levels shows that we fail to reject the null hypothesis of a unit root for both series. After stepping through the specifications (trend → drift → none), the φ tests indicate that neither trend nor drift are necessary. Both the S&P 500 index and EUR/USD exchange rate are non-stationary I(1) processes. This is typical for financial price series, which tend to follow random walk processes.
+
+## Step 2: ADF Test on Log-Differenced Series
+
+Since the original series are I(1), we apply the log-differencing transformation $\Delta \ln(P_t) = \ln(P_t) - \ln(P_{t-1})$ and test the transformed series for stationarity.
+
+**Note:** For the log returns, we start the sequential procedure from `drift` rather than `trend`. This is because we already established from testing the original levels that the trend component was not significant (φ₃ was not significant). Since log returns are differenced data, a deterministic trend is not expected.
+
+### S&P 500 Log Returns
+
+```{r adf-sp500-returns}
+result_sp500_returns <- sequential_adf_test_returns(returns_ts[, "r_SP500"], "S&P 500 Log Returns")
+cat("\n*** CONCLUSION:", result_sp500_returns$message, "***\n")
+```
+Data is now stationary! And the dirft can be used
+
+### EUR/USD Log Returns
+
+```{r adf-eurusd-returns}
+result_eurusd_returns <- sequential_adf_test_returns(returns_ts[, "r_EURUSD"], "EUR/USD Log Returns")
+cat("\n*** CONCLUSION:", result_eurusd_returns$message, "***\n")
+```
+Data is now stationary! And the dirft can be used
+
+
+
+The sequential testing procedure establishes:
+
+1. **Original price levels**: Both S&P 500 and EUR/USD are I(1) - non-stationary with unit roots
+2. **Log-differenced series**: Both series become I(0) - stationary after applying $\Delta \ln(P_t)$
+
+This confirms that the log-differencing transformation is appropriate and necessary for achieving stationarity. We proceed with VAR modeling using the stationary log returns series
 
 ---
 
 # 4. Cointegration Analysis
 
-Although both series appear to be I(0) based on ADF tests, we conduct cointegration analysis for completeness. Cointegration implies a long-run equilibrium relationship between the variables.
+Since both original price series are I(1), we can test for cointegration. If the series are cointegrated, there exists a long-run equilibrium relationship between them, and a linear combination of the two I(1) series will be I(0). Cointegration implies that although individual series may wander (unit root behavior), they move together over time and do not drift too far apart.
 
-## Johansen Cointegration Test
+## Visual Inspection of Log Price Levels
 
-We use the Johansen procedure, which tests for cointegration in a multivariate setting. The test provides two statistics:
+Before conducting formal tests, we plot both I(1) series (log price levels) to visually inspect whether they appear to move together over time.
 
-1. **Trace statistic**: Tests H₀: at most r cointegrating relationships
-2. **Maximum eigenvalue statistic**: Tests H₀: exactly r cointegrating relationships
+```{r visual-cointegration, fig.cap="Log Price Levels: Visual Inspection for Cointegration"}
+# Create log of price levels (the I(1) series)
+log_sp500 <- log(data_merged$SP500)
+log_eurusd <- log(data_merged$EURUSD)
 
-```{r johansen-test}
-# Determine lag order for VAR in levels
-var_select_prelim <- VARselect(returns_ts, lag.max = 8, type = "const")
+# Create time series objects
+log_sp500_ts <- ts(log_sp500, start = c(1999, 2), frequency = 12)
+log_eurusd_ts <- ts(log_eurusd, start = c(1999, 2), frequency = 12)
 
-# Use AIC selected lag
-optimal_lag_prelim <- var_select_prelim$selection["AIC(n)"]
+# Combine into multivariate time series
+log_levels <- ts.intersect(log_sp500_ts, log_eurusd_ts)
 
-# Johansen trace test
-johansen_trace <- ca.jo(
-  returns_ts,
-  type = "trace",
-  ecdet = "const",
-  K = 2,
-  spec = "longrun"
+# Plot both series together
+ts.plot(log_levels, lty = c(1, 2), lwd = c(2, 2),
+        col = c("steelblue", "darkred"),
+        xlab = "Year", ylab = "Log Price Level",
+        main = "Log Price Levels: S&P 500 and EUR/USD")
+legend("topleft", legend = c("log(S&P 500)", "log(EUR/USD)"),
+       col = c("steelblue", "darkred"), lty = c(1, 2), lwd = 2)
+```
+
+The plot shows the evolution of both log price levels over time. For cointegration to exist, we would expect the series to share common stochastic trends - that is, they should not drift apart indefinitely. Visual inspection provides initial intuition, but formal testing is required to draw conclusions.
+
+## Engle-Granger Residual-Based Test for Cointegration
+
+Following the methodology from lecture 8, we use the Engle-Granger two-step procedure to test for cointegration:
+
+**Step 1**: Estimate the long-run relationship using OLS:
+$$Y_t = \alpha + \theta X_t + Z_t$$
+
+**Step 2**: Test the residuals $\hat{Z}_t$ for stationarity using an ADF test. If the residuals are I(0), the series are cointegrated.
+
+**Important**: The critical values for testing cointegration residuals are NOT the standard ADF critical values. We use MacKinnon critical values adjusted for the cointegration context.
+
+```{r engle-granger-test}
+# Step 1: Estimate long-run relationship using OLS on log levels (I(1) series)
+log_sp500 <- log(data_merged$SP500)
+log_eurusd <- log(data_merged$EURUSD)
+
+coint_reg <- lm(log_sp500 ~ log_eurusd)
+
+# Display regression results
+cat("=== Step 1: Estimate Long-Run Relationship ===\n")
+cat("Regression: log(S&P 500) = α + θ × log(EUR/USD) + Z\n\n")
+print(summary(coint_reg))
+
+# Extract coefficients
+alpha_coint <- coef(coint_reg)[1]
+theta_coint <- coef(coint_reg)[2]
+
+cat("\nEstimated long-run relationship:\n")
+cat("log(S&P 500) =", round(alpha_coint, 4), "+", round(theta_coint, 4), "× log(EUR/USD)\n")
+```
+
+```{r coint-residuals-plot, fig.cap="Cointegrating Residuals from Engle-Granger Regression"}
+# Extract residuals
+residuals_coint <- coint_reg$residuals
+
+# Plot residuals
+plot(data_merged$Date, residuals_coint, type = "l",
+     main = "Cointegrating Residuals",
+     xlab = "Date", ylab = "Residuals", col = "darkblue", lwd = 1.5)
+abline(h = 0, lty = 2, col = "red")
+```
+
+If the series are cointegrated, the residuals should appear stationary - fluctuating around zero without a clear trend or persistent wandering.
+
+```{r adf-residuals-test}
+# Step 2: Test residuals for unit root (Engle-Granger test)
+# For cointegration residuals, we use type = "none" (no intercept or trend)
+# because the residuals have zero mean by construction
+
+cat("=== Step 2: ADF Test on Cointegrating Residuals ===\n\n")
+
+adf_residuals <- ur.df(residuals_coint, type = "none", lags = 8, selectlags = "AIC")
+print(summary(adf_residuals))
+
+# Extract test statistic
+tau_residuals <- adf_residuals@teststat[1, "tau1"]
+
+# Get sample size for MacKinnon response surface formula
+T_sample <- length(residuals_coint)
+
+# MacKinnon (2010) response surface coefficients for cointegration
+# k=2 variables, no trend (case 1: no constant in cointegrating regression)
+# Formula: CV = beta_inf + beta_1/T + beta_2/T^2
+mackinnon_coef <- data.frame(
+  level = c("1%", "5%", "10%"),
+  beta_inf = c(-3.9001, -3.3377, -3.0462),
+  beta_1 = c(-10.534, -5.967, -4.069),
+  beta_2 = c(-30.03, -8.98, -5.73)
 )
 
-# Extract test statistics
-trace_stats <- johansen_trace@teststat
-trace_cvals <- johansen_trace@cval
+# Compute sample-size adjusted critical values
+cv_1pct <- mackinnon_coef$beta_inf[1] + mackinnon_coef$beta_1[1]/T_sample + mackinnon_coef$beta_2[1]/T_sample^2
+cv_5pct <- mackinnon_coef$beta_inf[2] + mackinnon_coef$beta_1[2]/T_sample + mackinnon_coef$beta_2[2]/T_sample^2
+cv_10pct <- mackinnon_coef$beta_inf[3] + mackinnon_coef$beta_1[3]/T_sample + mackinnon_coef$beta_2[3]/T_sample^2
 
-# Create cointegration results table
-coint_trace_table <- data.frame(
-  H0 = c("r = 0", "r ≤ 1"),
-  Test_Statistic = trace_stats,
-  CV_10pct = trace_cvals[, 1],
-  CV_5pct = trace_cvals[, 2],
-  CV_1pct = trace_cvals[, 3]
+mackinnon_cv <- data.frame(
+  Significance = c("1%", "5%", "10%"),
+  Critical_Value = c(cv_1pct, cv_5pct, cv_10pct)
 )
 
-kable(coint_trace_table, digits = 3,
-      caption = "Johansen Trace Test Results",
-      col.names = c("Null Hypothesis", "Test Statistic", "10% CV", "5% CV", "1% CV"))
+cat("\n=== Cointegration Test Results ===\n")
+cat("Sample size T =", T_sample, "\n")
+cat("ADF test statistic on residuals (τ):", round(tau_residuals, 4), "\n\n")
+cat("MacKinnon Critical Values (adjusted for sample size):\n")
+cat("Formula: CV = β∞ + β₁/T + β₂/T²\n\n")
+print(mackinnon_cv, row.names = FALSE)
 
-# Johansen max eigenvalue test
-johansen_eigen <- ca.jo(
-  returns_ts,
-  type = "eigen",
-  ecdet = "const",
-  K = 2,
-  spec = "longrun"
-)
+# Determine conclusion using computed critical values
+if (tau_residuals < cv_1pct) {
+  coint_conclusion <- paste0("Reject H₀ at 1% level: Series ARE cointegrated (τ = ",
+                              round(tau_residuals, 4), " < ", round(cv_1pct, 4), ")")
+  coint_result <- "cointegrated"
+} else if (tau_residuals < cv_5pct) {
+  coint_conclusion <- paste0("Reject H₀ at 5% level: Series ARE cointegrated (τ = ",
+                              round(tau_residuals, 4), " < ", round(cv_5pct, 4), ")")
+  coint_result <- "cointegrated"
+} else if (tau_residuals < cv_10pct) {
+  coint_conclusion <- paste0("Reject H₀ at 10% level: Series ARE cointegrated (τ = ",
+                              round(tau_residuals, 4), " < ", round(cv_10pct, 4), ")")
+  coint_result <- "cointegrated"
+} else {
+  coint_conclusion <- paste0("Fail to reject H₀: Series are NOT cointegrated (τ = ",
+                              round(tau_residuals, 4), " > ", round(cv_10pct, 4), ")")
+  coint_result <- "not cointegrated"
+}
 
-# Extract test statistics
-eigen_stats <- johansen_eigen@teststat
-eigen_cvals <- johansen_eigen@cval
-
-coint_eigen_table <- data.frame(
-  H0 = c("r = 0", "r = 1"),
-  Test_Statistic = eigen_stats,
-  CV_10pct = eigen_cvals[, 1],
-  CV_5pct = eigen_cvals[, 2],
-  CV_1pct = eigen_cvals[, 3]
-)
-
-kable(coint_eigen_table, digits = 3,
-      caption = "Johansen Maximum Eigenvalue Test Results",
-      col.names = c("Null Hypothesis", "Test Statistic", "10% CV", "5% CV", "1% CV"))
+cat("\n*** CONCLUSION:", coint_conclusion, "***\n")
 ```
 
 ## Interpretation
 
-The Johansen test results indicate whether a long-run equilibrium relationship exists between S&P 500 and EUR/USD returns. If the test statistics exceed the critical values, we reject the null hypothesis of no cointegration (r = 0).
+The Engle-Granger test examines whether a stable long-run relationship exists between log(S&P 500) and log(EUR/USD).
 
-For stationary I(0) series, cointegration is less relevant economically, as both variables already exhibit mean reversion individually. The absence of cointegration (r = 0) would confirm that we should proceed with a standard VAR model in levels. If cointegration is found, it would suggest a long-run relationship that could be modeled through a VECM framework.
+**If the series are cointegrated** (residuals are stationary):
+- A long-run equilibrium relationship exists between the two markets
+- Deviations from equilibrium are temporary and self-correcting
+- We should use a Vector Error Correction Model (VECM) that incorporates the error correction term
 
-Based on the test results and the fact that both series are I(0), we proceed with a **VAR model in levels**.
+**If the series are NOT cointegrated** (residuals are non-stationary):
+- No stable long-run relationship exists
+- The series may drift apart without bound
+- We proceed with a standard VAR model on the stationary returns (first differences)
+
+Based on the Engle-Granger test results, we proceed with a **VAR model on the stationary log returns** since this is appropriate regardless of the cointegration outcome - we are modeling returns (I(0)) rather than levels (I(1)).
 
 ---
 
@@ -412,11 +649,13 @@ kable(t(var_select$criteria), digits = 3,
 
 # Extract optimal lag using AIC
 p_optimal <- var_select$selection["AIC(n)"]
+var_select$selection
+p_optimal
 ```
 
 ## Interpretation of Lag Selection
 
-The AIC (Akaike Information Criterion) balances model fit with parsimony. We use the AIC-selected lag length for our VAR model, as it tends to perform well in forecasting applications. The other criteria (HQ, SC, FPE) provide robustness checks. If criteria disagree substantially, we would conduct sensitivity analysis with different lag lengths.
+The AIC (Akaike Information Criterion) balances model fit with parsimony. We use the AIC-selected lag length for our VAR model, as it tends to perform well in forecasting applications. The other criteria (HQ, SC, FPE) provide robustness checks. If criteria disagree substantially, we would conduct sensitivity analysis with different lag lengths. VAR models have many parameters, so overfitting is a real risk - so we should consuder using few lags.
 
 ## VAR Estimation
 
@@ -471,62 +710,7 @@ The summary statistics indicate the overall explanatory power of the VAR system.
 
 ---
 
-# 6. Granger Causality Analysis
-
-Granger causality tests whether past values of one variable help predict another variable beyond what the variable's own past values provide.
-
-**Null Hypothesis**: Variable X does NOT Granger-cause variable Y
-**Alternative Hypothesis**: Variable X Granger-causes variable Y
-
-```{r granger-causality}
-# Test if EUR/USD Granger-causes S&P 500
-gc_eurusd_to_sp500 <- causality(var_model, cause = "r_EURUSD")
-
-# Test if S&P 500 Granger-causes EUR/USD
-gc_sp500_to_eurusd <- causality(var_model, cause = "r_SP500")
-
-# Create results table
-gc_results <- data.frame(
-  Direction = c(
-    "EUR/USD → S&P 500",
-    "S&P 500 → EUR/USD",
-    "Instantaneous"
-  ),
-  F_Statistic = c(
-    gc_eurusd_to_sp500$Granger$statistic,
-    gc_sp500_to_eurusd$Granger$statistic,
-    gc_eurusd_to_sp500$Instant$statistic
-  ),
-  p_value = c(
-    gc_eurusd_to_sp500$Granger$p.value,
-    gc_sp500_to_eurusd$Granger$p.value,
-    gc_eurusd_to_sp500$Instant$p.value
-  ),
-  Conclusion = c(
-    ifelse(gc_eurusd_to_sp500$Granger$p.value < 0.05, "Reject H₀ (Granger causality)", "Fail to reject H₀"),
-    ifelse(gc_sp500_to_eurusd$Granger$p.value < 0.05, "Reject H₀ (Granger causality)", "Fail to reject H₀"),
-    ifelse(gc_eurusd_to_sp500$Instant$p.value < 0.05, "Reject H₀ (Instantaneous)", "Fail to reject H₀")
-  )
-)
-
-kable(gc_results, digits = 4,
-      caption = "Granger Causality Test Results",
-      col.names = c("Direction", "F-Statistic", "p-value", "Conclusion"))
-```
-
-## Interpretation
-
-**EUR/USD → S&P 500**: This tests whether past EUR/USD returns help predict current S&P 500 returns. Rejection of H₀ (p < 0.05) indicates that exchange rate movements contain information about future stock returns. Economically, this could reflect exchange rate effects on corporate earnings (through competitiveness) or international capital flows.
-
-**S&P 500 → EUR/USD**: This tests the reverse relationship. Rejection indicates that stock market performance predicts future exchange rate movements. This could occur through portfolio rebalancing flows or changes in risk appetite affecting currency demand.
-
-**Instantaneous Causality**: This captures same-period correlation between the innovations (shocks) in both series, indicating common responses to contemporaneous events such as monetary policy announcements or global risk shocks.
-
-The Granger causality results directly address **Research Question 1**: Do stock returns and exchange rate returns influence each other dynamically? The tests reveal the direction and statistical significance of predictive relationships.
-
----
-
-# 7. Impulse Response Analysis
+# 6. Impulse Response Analysis
 
 Impulse response functions (IRFs) trace the dynamic response of one variable to a shock in another variable over time. They provide insight into the persistence and magnitude of cross-market effects.
 
@@ -551,6 +735,48 @@ irf_ortho <- irf(
 plot(irf_ortho, main = "")
 ```
 
+## Reduced-Form IRFs
+
+In contrast to orthogonalized IRFs, reduced-form IRFs shock one residual at a time without accounting for contemporaneous correlations between variables. This provides a complementary view of the dynamic propagation mechanism.
+
+```{r irf-reduced}
+# Compute reduced-form (non-orthogonalized) IRFs
+irf_reduced <- irf(
+  var_model,
+  n.ahead = 12,
+  ortho = FALSE,  # Reduced-form: no Cholesky decomposition
+
+  boot = TRUE,
+  runs = 1000,
+  ci = 0.95
+)
+```
+
+```{r irf-reduced-plot, fig.width=10, fig.height=8, fig.cap="Reduced-Form Impulse Response Functions (95% Bootstrap CI)"}
+# Plot reduced-form IRFs
+plot(irf_reduced, main = "")
+```
+
+## Comparison: Reduced-Form vs Orthogonalized IRFs
+
+**Reduced-Form IRF (`ortho = FALSE`):**
+
+- Shocks are measured in **1 unit** of the residual
+- The residual covariance matrix Σᵤ is **ignored**
+- No contemporaneous spillovers at t=0 beyond the shocked variable
+- Shows the **pure autoregressive propagation** through VAR lag matrices
+- Ordering of variables does **not** matter
+
+**Orthogonalized IRF (`ortho = TRUE`):**
+
+- Uses **Cholesky decomposition** of residual covariance Σᵤ = PP'
+- Shocks are measured in **1 standard deviation** of the structural shock
+- Accounts for **contemporaneous correlations** between variables
+- Ordering matters: first variable is assumed more exogenous (recursive identification)
+- Provides economically interpretable **structural shocks**
+
+In our analysis, the ordering (EUR/USD first, S&P 500 second) assumes that exchange rate shocks can affect stock returns contemporaneously, but stock market shocks only affect exchange rates with a lag. This reflects the assumption that foreign exchange markets, being highly liquid and global, may react more quickly to information.
+
 ## Interpretation of IRFs
 
 The IRF plots show four key relationships:
@@ -571,7 +797,11 @@ These IRFs address **Research Questions 1 and 3**, revealing both the existence 
 
 ---
 
-# 8. Volatility Analysis: GARCH Modeling
+# 7. Volatility Analysis: GARCH Modeling
+
+The VAR model in Section 5 captures the dynamic mean interactions between S&P 500 and EUR/USD returns. However, financial returns typically exhibit time-varying volatility (volatility clustering), where periods of high volatility are followed by high volatility and calm periods by calm periods. The VAR model assumes constant variance and does not capture these patterns.
+
+To model volatility dynamics, we apply a univariate ARMA-GARCH model to S&P 500 returns. This follows standard practice in financial econometrics, where mean dynamics (VAR) and variance dynamics (GARCH) are modeled separately. The multivariate extension (VAR-GARCH) is beyond the scope of this analysis.
 
 Financial returns often exhibit volatility clustering, where large changes are followed by large changes and small changes by small changes. We test for this using ARCH effects and model it using GARCH.
 
@@ -753,7 +983,7 @@ ggplot(vol_data, aes(x = Date, y = Volatility)) +
   labs(
     title = "Conditional Volatility of S&P 500 Returns",
     x = "Date",
-    y = "Conditional Standard Deviation (%)"
+    y = "Conditional Standard Deviation"
   ) +
   theme_lecture
 ```
@@ -816,7 +1046,7 @@ forecast_table <- data.frame(
 
 kable(forecast_table, digits = 4,
       caption = "GARCH Volatility Forecasts (5 months ahead)",
-      col.names = c("Months Ahead", "Forecasted Volatility (%)"))
+      col.names = c("Months Ahead", "Forecasted Volatility"))
 ```
 
 The volatility forecasts provide forward-looking estimates of market uncertainty. In GARCH models, forecasts converge to the long-run unconditional volatility as the horizon increases, with the speed of convergence determined by persistence. These forecasts are valuable for:
@@ -828,7 +1058,7 @@ The volatility forecasts provide forward-looking estimates of market uncertainty
 
 ---
 
-# 9. Conclusions
+# 8. Conclusions
 
 This study examined the dynamic interactions between S&P 500 stock returns and EUR/USD exchange rate returns using monthly data from January 1999 to November 2025. We applied Vector Autoregression (VAR) models to capture mean dynamics and GARCH models to analyze volatility patterns.
 
@@ -836,7 +1066,7 @@ This study examined the dynamic interactions between S&P 500 stock returns and E
 
 **1. Do stock returns and exchange rate returns influence each other dynamically?**
 
-Based on VAR analysis and Granger causality tests, we find evidence of dynamic interactions between the markets. The Granger causality results reveal the direction and strength of predictive relationships. If both directions exhibit significant Granger causality, it indicates bidirectional feedback between stock and currency markets, consistent with integrated global financial markets. Unidirectional causality would suggest one market leads the other in information processing.
+Based on VAR analysis, we find evidence of dynamic interactions between the markets. The VAR coefficient estimates reveal cross-market predictive relationships - whether past returns in one market help predict future returns in the other. Significant cross-equation coefficients indicate information flow between stock and currency markets, consistent with integrated global financial markets.
 
 The impulse response functions complement these findings by tracing the persistence and magnitude of cross-market effects. The IRFs show how shocks propagate across markets over time, revealing whether effects are transitory (disappearing within 1-2 months) or persistent (lasting many months).
 
@@ -866,7 +1096,7 @@ Volatility spillovers can occur through multiple channels: exchange rate uncerta
 
 2. **Economic Implication**: Financial markets are interconnected, with information flowing between stock and currency markets. Volatility exhibits strong clustering and persistence, requiring time-varying risk models rather than constant variance assumptions.
 
-3. **Most Important Result**: The combination of Granger causality, impulse response analysis, and GARCH modeling provides a comprehensive picture of market interdependencies and risk dynamics, essential for modern portfolio management and risk assessment.
+3. **Most Important Result**: The combination of VAR analysis, impulse response functions, and GARCH modeling provides a comprehensive picture of market interdependencies and risk dynamics, essential for modern portfolio management and risk assessment.
 
 ## Limitations
 
@@ -918,10 +1148,10 @@ Potential extensions to this research include:
 
 ---
 
-# 10. References
+# 9. References
 
 ## Course Materials
-- Lecture 2: Vector Autoregression (VAR) Models and Granger Causality
+- Lecture 2: Vector Autoregression (VAR) Models
 - Lecture 6: Unit Roots, Cointegration, and Vector Error Correction Models (VECM)
 - Lecture 9: ARCH and GARCH Models for Volatility Modeling
 
@@ -938,3 +1168,7 @@ Potential extensions to this research include:
 - EUR/USD Exchange Rate: European Central Bank Statistical Data Warehouse
 
 ---
+
+
+
+
