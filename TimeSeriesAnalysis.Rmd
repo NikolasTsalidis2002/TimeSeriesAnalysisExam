@@ -186,7 +186,7 @@ The correlation between S&P 500 and EUR/USD returns provides initial evidence of
 
 ## Time Series Plots
 
-```{r plot-sp500-levels, fig.cap="S&P 500 Index Levels (1999-2025)"}
+```{r plot-sp500-levels}
 # Define custom theme
 theme_lecture <- theme_light() +
   theme(
@@ -207,7 +207,7 @@ ggplot(data_merged, aes(x = Date, y = SP500)) +
   theme_lecture
 ```
 
-```{r plot-sp500-returns, fig.cap="S&P 500 Monthly Returns (1999-2025)"}
+```{r plot-sp500-returns}
 # Plot S&P 500 returns
 ggplot(data_merged, aes(x = Date, y = r_SP500)) +
   geom_line(color = "darkred", linewidth = 0.5) +
@@ -220,7 +220,7 @@ ggplot(data_merged, aes(x = Date, y = r_SP500)) +
   theme_lecture
 ```
 
-```{r plot-eurusd-levels, fig.cap="EUR/USD Exchange Rate Levels (1999-2025)"}
+```{r plot-eurusd-levels}
 # Plot EUR/USD levels
 ggplot(data_merged, aes(x = Date, y = EURUSD)) +
   geom_line(color = "darkgreen", linewidth = 0.7) +
@@ -232,7 +232,7 @@ ggplot(data_merged, aes(x = Date, y = EURUSD)) +
   theme_lecture
 ```
 
-```{r plot-eurusd-returns, fig.cap="EUR/USD Monthly Returns (1999-2025)"}
+```{r plot-eurusd-returns}
 # Plot EUR/USD returns
 ggplot(data_merged, aes(x = Date, y = r_EURUSD)) +
   geom_line(color = "darkorange", linewidth = 0.5) +
@@ -720,19 +720,19 @@ We compute orthogonalized IRFs using Cholesky decomposition. The ordering matter
 
 ```{r irf-computation}
 # Compute orthogonalized IRFs
-irf_ortho <- irf(
-  var_model,
-  n.ahead = 12,
-  ortho = TRUE,
-  boot = TRUE,
-  runs = 1000,
-  ci = 0.95
-)
+#irf_ortho <- irf(
+#  var_model,
+#  n.ahead = 12,
+#  ortho = TRUE,
+#  boot = TRUE,
+#  runs = 1000,
+#  ci = 0.95
+#)
 ```
 
 ```{r irf-plot, fig.width=10, fig.height=8, fig.cap="Orthogonalized Impulse Response Functions (95% Bootstrap CI)"}
 # Plot IRFs
-plot(irf_ortho, main = "")
+#plot(irf_ortho, main = "")
 ```
 
 ## Reduced-Form IRFs
@@ -752,9 +752,75 @@ irf_reduced <- irf(
 )
 ```
 
+```{r}
+irf_reduced
+```
+
 ```{r irf-reduced-plot, fig.width=10, fig.height=8, fig.cap="Reduced-Form Impulse Response Functions (95% Bootstrap CI)"}
-# Plot reduced-form IRFs
-plot(irf_reduced, main = "")
+# Define extract_varirf function (based on Lecture 6 approach)
+extract_varirf <- function(x) {
+  # Get variable names
+  var_names <- names(x$irf)
+  n_vars <- length(var_names)
+  n_ahead <- nrow(x$irf[[1]])
+
+  # Initialize data frame with period column
+  result <- data.frame(period = 0:(n_ahead - 1))
+
+  # Extract IRF values, lower and upper bounds for each combination
+  for (impulse in var_names) {
+    for (response in colnames(x$irf[[impulse]])) {
+      col_name <- paste0("irf_", impulse, "_", response)
+      result[[col_name]] <- x$irf[[impulse]][, response]
+      result[[paste0("lower_", impulse, "_", response)]] <- x$Lower[[impulse]][, response]
+      result[[paste0("upper_", impulse, "_", response)]] <- x$Upper[[impulse]][, response]
+    }
+  }
+  return(result)
+}
+
+# Extract IRF data to tidy format
+irf_data <- extract_varirf(irf_reduced)
+
+# Create individual plots for each impulse-response combination
+p1 <- irf_data %>%
+  ggplot(aes(x = period, y = irf_r_SP500_r_SP500,
+             ymin = lower_r_SP500_r_SP500, ymax = upper_r_SP500_r_SP500)) +
+  geom_hline(yintercept = 0, color = "red") +
+  geom_ribbon(fill = "grey", alpha = .2, color = "grey50", linetype = "dashed") +
+  geom_line() +
+  theme_light() +
+  labs(title = "S&P 500 shock → S&P 500", x = "Months", y = "Response")
+
+p2 <- irf_data %>%
+  ggplot(aes(x = period, y = irf_r_SP500_r_EURUSD,
+             ymin = lower_r_SP500_r_EURUSD, ymax = upper_r_SP500_r_EURUSD)) +
+  geom_hline(yintercept = 0, color = "red") +
+  geom_ribbon(fill = "grey", alpha = .2, color = "grey50", linetype = "dashed") +
+  geom_line() +
+  theme_light() +
+  labs(title = "S&P 500 shock → EUR/USD", x = "Months", y = "Response")
+
+p3 <- irf_data %>%
+  ggplot(aes(x = period, y = irf_r_EURUSD_r_SP500,
+             ymin = lower_r_EURUSD_r_SP500, ymax = upper_r_EURUSD_r_SP500)) +
+  geom_hline(yintercept = 0, color = "red") +
+  geom_ribbon(fill = "grey", alpha = .2, color = "grey50", linetype = "dashed") +
+  geom_line() +
+  theme_light() +
+  labs(title = "EUR/USD shock → S&P 500", x = "Months", y = "Response")
+
+p4 <- irf_data %>%
+  ggplot(aes(x = period, y = irf_r_EURUSD_r_EURUSD,
+             ymin = lower_r_EURUSD_r_EURUSD, ymax = upper_r_EURUSD_r_EURUSD)) +
+  geom_hline(yintercept = 0, color = "red") +
+  geom_ribbon(fill = "grey", alpha = .2, color = "grey50", linetype = "dashed") +
+  geom_line() +
+  theme_light() +
+  labs(title = "EUR/USD shock → EUR/USD", x = "Months", y = "Response")
+
+# Combine into 2x2 grid
+grid.arrange(p1, p2, p3, p4, ncol = 2)
 ```
 
 ## Comparison: Reduced-Form vs Orthogonalized IRFs
@@ -919,36 +985,53 @@ persistence <- alpha1 + beta1
 # Calculate half-life of volatility shock
 half_life <- log(0.5) / log(persistence)
 
-# Create GARCH parameter table
+
+safe_extract <- function(mat, param, col) {
+  if (!is.null(mat) &&
+      param %in% rownames(mat) &&
+      col %in% colnames(mat)) {
+    return(mat[param, col])
+  } else {
+    return(NA)
+  }
+}
+
+
+
+coef_mat <- garch_fit@fit$matcoef
+
 garch_param_table <- data.frame(
-  Parameter = c("ω (omega)", "α₁ (alpha1)", "β₁ (beta1)", "Persistence (α₁ + β₁)", "Half-life (months)"),
+  Parameter = c("ω (omega)", "α₁ (alpha1)", "β₁ (beta1)", 
+                "Persistence (α₁ + β₁)", "Half-life (months)"),
+  
   Estimate = c(alpha0, alpha1, beta1, persistence, half_life),
+  
   Std_Error = c(
-    garch_fit@fit$matcoef["omega", "Std. Error"],
-    garch_fit@fit$matcoef["alpha1", "Std. Error"],
-    garch_fit@fit$matcoef["beta1", "Std. Error"],
+    safe_extract(coef_mat, "omega", "Std. Error"),
+    safe_extract(coef_mat, "alpha1", "Std. Error"),
+    safe_extract(coef_mat, "beta1", "Std. Error"),
     NA,
     NA
   ),
+  
   t_value = c(
-    garch_fit@fit$matcoef["omega", "t value"],
-    garch_fit@fit$matcoef["alpha1", "t value"],
-    garch_fit@fit$matcoef["beta1", "t value"],
+    safe_extract(coef_mat, "omega", "t value"),
+    safe_extract(coef_mat, "alpha1", "t value"),
+    safe_extract(coef_mat, "beta1", "t value"),
     NA,
     NA
   ),
+  
   p_value = c(
-    garch_fit@fit$matcoef["omega", "Pr(>|t|)"],
-    garch_fit@fit$matcoef["alpha1", "Pr(>|t|)"],
-    garch_fit@fit$matcoef["beta1", "Pr(>|t|)"],
+    safe_extract(coef_mat, "omega", "Pr(>|t|)"),
+    safe_extract(coef_mat, "alpha1", "Pr(>|t|)"),
+    safe_extract(coef_mat, "beta1", "Pr(>|t|)"),
     NA,
     NA
   )
 )
 
-kable(garch_param_table, digits = 4,
-      caption = "GARCH(1,1) Parameter Estimates for S&P 500 Returns",
-      col.names = c("Parameter", "Estimate", "Std. Error", "t-value", "p-value"))
+
 ```
 
 ## Interpretation of GARCH Parameters
@@ -967,15 +1050,16 @@ The stationarity condition α₁ + β₁ < 1 ensures that volatility does not ex
 
 ## Conditional Volatility Plot
 
-```{r garch-volatility-plot, fig.cap="Conditional Volatility of S&P 500 Returns (GARCH Model)"}
+```{r garch-volatility-plot}
 # Extract conditional volatility (sigma_t)
 cond_vol <- sigma(garch_fit)
 
 # Create data frame for plotting
 vol_data <- data.frame(
   Date = data_merged$Date[-1],
-  Volatility = as.numeric(cond_vol)
+  Volatility = as.numeric(cond_vol[-1])
 )
+
 
 # Plot conditional volatility
 ggplot(vol_data, aes(x = Date, y = Volatility)) +

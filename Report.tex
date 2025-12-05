@@ -19,6 +19,7 @@
 \usepackage{parskip}
 \usepackage{fancyhdr}
 \usepackage{lastpage}
+\usepackage{soul}
 
 % ============================================
 % FORMATTING
@@ -56,22 +57,21 @@
 \pagenumbering{gobble}
 
 \begin{center}
-\vspace*{2cm}
 
-\Huge\textbf{Dynamic Interactions and Volatility Between Stock Returns and Exchange Rates}\\[1cm]
+\large\textbf{DYNAMIC INTERACTIONS AND VOLATILITY BETWEEN STOCK RETURNS AND EXCHANGE RATES}\\[2cm]
 
-\Large\textbf{Type of Paper:} Exam Synopsis\\[0.3cm]
-\textbf{Course:} CCMVV1727U.LA -- Time Series for Economics, Business and Finance\\[0.3cm]
-\textbf{Instructor:} Marta Boczo\'{n}\\[0.3cm]
-\textbf{Institution:} Copenhagen Business School (CBS)\\[0.3cm]
-\textbf{Date:} November 2025\\[1.5cm]
+\textbf{INSTRUCTOR:} Marta Boczo\'{n}\\[0.5cm]
+\textbf{SUBMISSION DATE:} November 2025\\[0.5cm]
 
-\textbf{Group Members:}\\[0.3cm]
-Nikolaos Alexandros Tsalidis de Zabala\\
-Sam Younes\\
-Andreas Benggaard\\
-Antonio C\'{a}lio\\[2cm]
+\textbf{GROUP MEMBERS:}\\
+Sam Younes, Nikolaos Alexandros Tsalidis de Zabala, Antonio Calio, Andreas Benggaard -- Pretty sure this needs to be student ID's?
+\hl{TODO: 
 
+- Make sure the references are all there and are all correct. As per the exam isntructions "When citing others work (inc. textbook) you need to clearly state the book chapter/paper and
+the exact page you’re referring to. Alternatively, you are allowed to use quotes." - we are missing page numbers form the course book we are referencing 
+
+- make sure the cover is correct (right IDs and other things that we need)
+}
 \end{center}
 
 \vfill
@@ -92,70 +92,61 @@ Antonio C\'{a}lio\\[2cm]
 % ============================================
 \section{Introduction}
 
-\subsection{Research Question}
+This study examines how U.S.\ stock market returns (S\&P 500) and the EUR/USD exchange rate returns behave over time. Our analysis is built around two related research questions. The first is: \textbf{Do stock returns and exchange rate returns influence each other dynamically?} To investigate this, we estimate a Vector Autoregressive (VAR) model, which allows us to see whether past movements in one series help explain movements in the other. The VAR captures the conditional mean of returns, meaning how expected returns respond to past information.
 
-This study examines the dynamic interactions between U.S.\ stock market returns (S\&P 500) and the EUR/USD exchange rate returns. Specifically, we address three research questions:
+Mean dynamics, however, do not fully describe financial markets. Even when returns show little predictability, their volatility often exhibits a clear pattern: periods of large movements tend to be followed by more large movements, and calm periods tend to persist. This leads to our second question: \textbf{How does volatility evolve over time, and can we model its persistence?} To answer this, we estimate an ARMA–GARCH model that captures short-run return behavior along with time-varying volatility.
 
-\begin{enumerate}
-    \item Do stock returns and exchange rate returns influence each other dynamically?
-    \item How does stock market volatility evolve over time?
-    \item Do shocks in exchange rates influence stock market volatility?
-\end{enumerate}
+Taken together, these two approaches provide a more complete picture of market behavior. The VAR shows whether the two markets move together in expectation, while the GARCH component reveals how uncertainty and risk change over time. Both perspectives matter for investors, risk managers, and policymakers who monitor financial stability.
 
-\subsection{Motivation}
+Understanding these interactions is relevant today. Exchange rate movements affect the competitiveness and earnings of multinational firms, which in turn influence stock prices. Likewise, shifts in equity markets can drive capital flows that put pressure on exchange rates. These channels mean that stock and currency markets can influence each other even if the effects are subtle.
 
-Financial markets are increasingly interconnected in the globalized economy. Understanding the relationship between stock and foreign exchange markets is crucial for investors, policymakers, and risk managers. Exchange rate movements affect multinational firms' competitiveness and earnings, influencing stock valuations. Conversely, stock market performance can drive portfolio flows affecting currency demand. Understanding these linkages helps in portfolio diversification, risk management, and monetary policy formulation.
+Our study builds on the work of \citet{manasseh2019}, who analyzed the relationship between stock prices and exchange rates in Nigeria using a multivariate VAR–GARCH framework. Their results showed cointegration between the series, mean spillovers from stocks to exchange rates, and two-way transmission of volatility. We follow a similar two-part strategy, applying VAR to capture mean dynamics and GARCH to model volatility, but focus on the S\&P 500 and the EUR/USD exchange rate.
 
-\subsection{Literature}
-
-The stock-exchange rate nexus has been studied extensively. \citet{manasseh2019} employed panel VAR methods to analyze exchange rate dynamics in emerging markets, finding significant cross-market spillovers. Traditional approaches use VAR models to capture mean dynamics \citep[Ch.~5]{enders2015}, while GARCH models characterize volatility clustering---a stylized fact of financial returns \citep[Ch.~3]{tsay2010}. Our contribution is to apply both VAR and ARMA-GARCH models to monthly S\&P 500 and EUR/USD data from 1999--2025, providing updated evidence on market interdependencies.
+Previous research has identified several mechanisms linking the two markets, including trade effects, capital movements, global risk sentiment, and financial integration, though the strength of these relationships varies across time and across studies. VAR models are commonly used to examine dynamic interactions, while GARCH models capture the volatility patterns. Building on this, we apply VAR and ARMA–GARCH models to monthly S\&P 500 and EUR/USD data from 1999 to 2025 to provide updated evidence on how these two markets interact.
 
 % ============================================
 % 2. DATA
 % ============================================
-\section{Data}
+\section{Exploratory data analysis}
 
 \subsection{Data Description}
 
-We use two monthly time series covering January 1999 to November 2025:
+Our analysis uses two monthly time series that run from January 1999 to November 2025: the S\&P 500 Index and the EUR/USD exchange rate. The S\&P 500 represents the monthly closing value of one of the most widely followed benchmarks of the U.S.\ stock market, covering large companies from many different sectors. It is often used as a broad indicator of overall market conditions and investor sentiment. The EUR/USD exchange rate comes from the European Central Bank’s Statistical Data Warehouse. We use the end-of-month value, which tells us how many U.S.\ dollars are needed to buy one euro. This exchange rate is a key measure of the relative strength of the U.S.\ and European economies and plays an important role in international trade and financial markets.
 
-\begin{itemize}
-    \item \textbf{S\&P 500 Index}: Monthly closing values from Standard \& Poor's, representing the 500 largest U.S.\ publicly traded companies.
-    \item \textbf{EUR/USD Exchange Rate}: End-of-month values from the European Central Bank Statistical Data Warehouse.
-\end{itemize}
+The sample begins in January 1999, the month the euro was officially introduced in financial markets. Starting the analysis here ensures that the EUR/USD data are consistent and not affected by transitions from earlier national currencies. Both series are complete with no missing observations over the sample period.
 
-The sample begins January 1999 when the euro was introduced, ensuring consistent exchange rate data. We transform price levels to log returns:
+We do not apply seasonal adjustment to the data. Financial returns on stock indices and exchange rates are not typically subject to strong seasonal patterns in the way that macroeconomic variables like GDP or retail sales are. Any calendar effects in asset returns tend to be weak and irregular, and removing them could distort the underlying dynamics we aim to capture.
+
+To make the two series suitable for time-series modeling, and to focus on percentage changes rather than levels, we convert both the S\&P 500 and EUR/USD values into log returns. These returns are calculated as
+
 \begin{equation}
-    r_t = \Delta \ln(P_t) = \ln(P_t) - \ln(P_{t-1})
+    r_t = \Delta \ln(P_t) = \ln(P_t) - \ln(P_{t-1}).
 \end{equation}
-
-Table~\ref{tab:summary} presents summary statistics. Both series exhibit negative skewness (larger negative than positive returns) and excess kurtosis (fat tails), justifying GARCH modeling.
-
-\begin{table}[H]
-\centering
-\caption{Summary Statistics of Monthly Log Returns}
-\label{tab:summary}
-\begin{tabular}{lcccccc}
-\toprule
-Variable & Mean & Std.\ Dev. & Min & Max & Skewness & Kurtosis \\
-\midrule
-S\&P 500 Returns & 0.007 & 0.044 & $-$0.185 & 0.127 & $-$0.68 & 4.52 \\
-EUR/USD Returns & 0.001 & 0.030 & $-$0.101 & 0.102 & $-$0.15 & 3.89 \\
-\bottomrule
-\end{tabular}
-\end{table}
+In the following figures one can see the time series for both of the variables that are used in this study.
+\begin{figure}[H]
+  \centering
+  \begin{minipage}{0.48\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{Images/sp500.png}
+    \caption{S\&P 500 Index Level}
+    \label{fig:log_shap}
+  \end{minipage}
+  \hfill
+  \begin{minipage}{0.48\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{Images/exchange_rate.png}
+    \caption{EUR/USD Exchange Rate Levels}
+    \label{fig:boost_shap}
+  \end{minipage}
+\end{figure}
 
 \subsection{Stationarity Analysis}
 
-We apply the Augmented Dickey-Fuller (ADF) test using the sequential testing procedure from \citet[Ch.~4]{enders2015}.
+To examine whether our time series behave in a stable way over time, we apply the Augmented Dickey–Fuller (ADF) test \citep[Chapter~4]{enders2015}. We start with the most flexible version of the test equation, which includes both a constant and a trend. If either of these terms turns out to be unnecessary, we remove it and re-estimate the model. The key question is whether the lagged level of the series is significantly negative. If it is, we conclude that the series is stationary and tends to return to its long-run mean after shocks. If it is not, then the series is considered non-stationary, meaning that shocks have lasting effects and the series can drift over time.
 
-\textbf{Hypotheses:}
-\begin{itemize}
-    \item $H_0$: The series has a unit root (non-stationary, I(1))
-    \item $H_1$: The series is stationary (I(0))
-\end{itemize}
+Formally, the ADF test evaluates whether a series contains a unit root. The null hypothesis is \( H_0: \) the series is non‑stationary, while the alternative is \( H_1: \) the series is stationary.
 
-Table~\ref{tab:adf} reports the ADF test results. Original price levels are I(1), while log returns are I(0).
+We conduct all tests at the 5\% significance level. If the test statistic is more negative than the critical value, we reject the null hypothesis and conclude the series is stationary. Table~\ref{tab:adf} summarizes the results. As expected, both the S\&P 500 price level and the EUR/USD exchange rate level behave like non-stationary series, while their log-differenced returns are stationary. This confirms that log returns are the appropriate choice for our time-series modeling, including the VAR analysis that follows.
 
 \begin{table}[H]
 \centering
@@ -165,26 +156,61 @@ Table~\ref{tab:adf} reports the ADF test results. Original price levels are I(1)
 \toprule
 Series & Specification & Test Statistic & Critical Value (5\%) & Conclusion \\
 \midrule
-S\&P 500 Levels & None & $-$0.42 & $-$1.95 & I(1) \\
-EUR/USD Levels & None & $-$1.23 & $-$1.95 & I(1) \\
-S\&P 500 Returns & Drift & $-$12.85 & $-$2.88 & I(0) \\
-EUR/USD Returns & Drift & $-$14.21 & $-$2.88 & I(0) \\
+S\&P 500 Levels & None & 0.26 & $-$3.43 & I(1) \\
+EUR/USD Levels & None & 0.08 & $-$1.95 & I(1) \\
+S\&P 500 Returns & Drift & $-$10.12 & $-$2.88 & I(0) \\
+EUR/USD Returns & Drift & $-$7.80 & $-$2.88 & I(0) \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-The log-differencing transformation achieves stationarity, allowing VAR estimation on returns.
+The figures below show the two return series in their stationary form. Both exhibit much more stable behavior than the raw price levels, supporting the conclusion from the ADF tests.
+
+\begin{figure}[H]
+  \centering
+  \begin{minipage}{0.48\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{Images/sp500_diff.png}
+    \caption{S\&P 500 Returns}
+    \label{fig:sp500_diff}
+  \end{minipage}
+  \hfill
+  \begin{minipage}{0.48\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{Images/exchange_rate_diff.png}
+    \caption{EUR/USD Returns}
+    \label{fig:exchange_rate_diff}
+  \end{minipage}
+\end{figure}
 
 \subsection{Cointegration Test}
 
-Since both price levels are I(1), we test for cointegration using the Engle-Granger two-step procedure \citep[Ch.~6]{enders2015}:
+Because both price series are integrated of order one, the next question is whether they move together in the long run. To examine this, we apply the Engle–Granger two-step procedure \citep[Chapter~6]{enders2015}. The idea is the following: if the S\&P 500 and the EUR/USD exchange rate ({original non-stationary data for both}) share a long-run equilibrium, then a stable relationship should link their levels, and any short-term deviations from this relationship should eventually die out.
 
-\textbf{Step 1:} Estimate the long-run relationship via OLS:
+The first part of the procedure estimates the long-run connection between the two series using an OLS regression of the S\&P 500 level on the EUR/USD exchange rate as can be seen in the following formula.
+
 \begin{equation}
     \ln(\text{S\&P 500})_t = \alpha + \theta \ln(\text{EUR/USD})_t + Z_t
 \end{equation}
 
-\textbf{Step 2:} Test residuals $\hat{Z}_t$ for stationarity using MacKinnon critical values.
+The residuals from this regression represent the temporary departures from the potential equilibrium. As seen in Figure~\ref{fig:experiments}, at a first glace the residuals are not stationary.
+
+The critical values used for testing the stationarity of the Engle--Granger
+cointegration residuals differ from the standard ADF critical values. This
+difference arises because the residuals are not directly observed data but are
+instead generated from an OLS regression. The estimation step forces the
+residuals to fit the sample as closely as possible, which makes them appear
+more stationary than they truly are. If the usual ADF critical values were
+applied, the test would be biased toward incorrectly rejecting the null
+hypothesis of no cointegration. To address this issue, \citet{mackinnon1991} computed adjusted critical values specifically for the Engle--Granger framework using Monte Carlo simulations. These values account for the fact that the residuals are generated regressors and depend on the sample size. The critical value is calculated as \( CV(T) = c(\infty) + \frac{a}{T} + \frac{b}{T^2} \), where \( c(\infty) \), \( a \), and \( b \) are constants provided by MacKinnon, and \( T \) is the number of observations. We then compare the ADF test statistic on the residuals directly to this adjusted critical value.
+\begin{figure}[H]
+  \centering
+  \includegraphics[scale=0.3]{Images/co_intergration_residuals.png}
+  \caption{Cointegration Residuals}
+  \label{fig:experiments}
+\end{figure}
+
+Table~\ref{tab:coint} shows the results. The test statistic on the residuals is 0.41, which is higher than all the critical values. This means we cannot reject the idea that the residuals have a unit root. In practical terms, the deviations from the estimated long-run relationship do not settle back to any stable mean. As a result, the data provide no evidence of cointegration between the two price series.
 
 \begin{table}[H]
 \centering
@@ -194,115 +220,114 @@ Since both price levels are I(1), we test for cointegration using the Engle-Gran
 \toprule
 Test Statistic ($\tau$) & 1\% CV & 5\% CV & 10\% CV \\
 \midrule
-$-$2.15 & $-$3.90 & $-$3.34 & $-$3.05 \\
+0.41 & $-$3.95 & $-$3.36 & $-$3.06 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\textbf{Conclusion:} We fail to reject $H_0$ at all significance levels---the series are \textbf{not cointegrated}. Therefore, we proceed with a VAR model on stationary returns rather than a VECM.\footnote{The absence of cointegration implies no stable long-run equilibrium between log prices; markets may drift apart over time.}
+Since we do not find a long-run equilibrium relationship, we proceed with a VAR model based on the stationary return series rather than using a VECM.
 
 % ============================================
 % 3. METHODS
 % ============================================
 \section{Methods}
 
-We employ two complementary models addressing different aspects of the data:
+We use two models that highlight different features of the data. The first examines how S\&P 500 and EUR/USD returns influence one another over time, while the second captures the changing volatility patterns that are typical in financial markets.
 
 \subsection{Model 1: Vector Autoregression (VAR)}
 
-The VAR model captures \textbf{conditional mean dynamics} between S\&P 500 and EUR/USD returns. A VAR($p$) model is:
-\begin{equation}
-    \mathbf{y}_t = \mathbf{c} + \mathbf{A}_1 \mathbf{y}_{t-1} + \cdots + \mathbf{A}_p \mathbf{y}_{t-p} + \mathbf{u}_t
-\end{equation}
-where $\mathbf{y}_t = (r^{\text{SP500}}_t, r^{\text{EUR/USD}}_t)'$ and $\mathbf{u}_t \sim (0, \Sigma)$.
+To study how the two return series move together, we estimate a Vector Autoregression (VAR) model \citep[Chapter~5]{enders2015}. In a VAR, each variable depends on its own past values as well as the past values of the other variable. This structure makes it possible to see how shocks in one market spill over into the other. Formally, a VAR($p$) takes the form
+\[
+y_t = c + A_1 y_{t-1} + A_2 y_{t-2} + \dots + A_p y_{t-p} + u_t,
+\]
+where \(y_t = (r_{\text{SP500},t}, r_{\text{EUR/USD},t})'\) contains the two return series, the matrices \(A_i\) describe how past observations influence current values, and \(u_t\) represents new shocks not captured by lagged information. The lag order is chosen using the Akaike Information Criterion (AIC), which helps avoid overfitting by balancing model fit with simplicity. The results to this can be found in the next section where we discuss the outcome.
 
-Lag length $p$ is selected using AIC \citep[Ch.~5]{enders2015}. We compute orthogonalized impulse response functions (IRFs) via Cholesky decomposition to trace shock propagation.
+After estimating the VAR model, we compute reduced-form impulse response functions to see how shocks move through the system over time. We use reduced-form IRFs rather than a structural VAR because we do not have strong assumptions on the relationship between how the variables affect each other, or how the shocks of a variable affect the other - a structural model would require imposing such assumptions.
 
-\textbf{Diagnostic checks:} Residual autocorrelation tests (Portmanteau), stability condition (eigenvalues inside unit circle).
 
-\subsection{Model 2: ARMA-GARCH}
 
-The VAR assumes constant variance. Financial returns exhibit \textbf{volatility clustering}---the GARCH model captures this \citep[Ch.~3]{tsay2010}. We apply univariate ARMA($p$,$q$)-GARCH(1,1) to S\&P 500 returns:
+\subsection{Model 2: ARMA–GARCH}
 
-\textbf{Mean equation:}
-\begin{equation}
-    r_t = \mu + \sum_{i=1}^{p} \phi_i r_{t-i} + \sum_{j=1}^{q} \theta_j \varepsilon_{t-j} + \varepsilon_t
-\end{equation}
+Because financial returns often experience periods of calm followed by bursts of volatility, we also estimate an ARMA–GARCH model for the S\&P 500 returns \citep[Chapter~3]{enders2015}. The ARMA part captures short-run patterns in the conditional mean, combining autoregressive terms (past returns affecting current returns) and moving-average terms (past shocks influencing the present). The orders $(p,q)$ are selected using \texttt{auto.arima()}, consistent with standard model identification tools such as the ACF and PACF.
 
-\textbf{Variance equation:}
-\begin{equation}
-    \sigma_t^2 = \omega + \alpha_1 \varepsilon_{t-1}^2 + \beta_1 \sigma_{t-1}^2
-\end{equation}
+The GARCH component models how volatility changes over time. Instead of assuming constant variance, GARCH updates the conditional variance based on past squared shocks and past volatility, which reflects the common pattern where large movements tend to cluster together. Before estimating the model, we confirm the presence of volatility clustering using the ARCH–LM test.
 
-ARMA orders are selected via \texttt{auto.arima()}. We test for ARCH effects using the ARCH-LM test before estimation \citep[Ch.~3]{tsay2010}.
+The full ARMA–GARCH specification consists of three components:
 
-\textbf{Diagnostic checks:} ARCH-LM test on standardized residuals (should show no remaining ARCH effects).
+\textbf{Mean equation (ARMA):}
+\[
+r_t = \mu + \sum_{i=1}^{p} \phi_i r_{t-i} + \sum_{j=1}^{q} \theta_j \varepsilon_{t-j} + \varepsilon_t
+\]
 
-These models are complementary: VAR captures bivariate mean interactions, GARCH captures univariate volatility dynamics. Multivariate GARCH (e.g., DCC-GARCH) is beyond this analysis's scope.
+\textbf{Error structure:}
+\[
+\varepsilon_t = \sigma_t \cdot v_t, \quad v_t \sim \text{i.i.d.}(0,1)
+\]
+
+\textbf{Variance equation (GARCH):}
+\[
+\sigma_t^2 = \omega + \sum_{i=1}^{q} \alpha_i \varepsilon_{t-i}^2 + \sum_{j=1}^{p} \beta_j \sigma_{t-j}^2
+\]
+
+The error term $\varepsilon_t$ in the mean equation has time-varying variance $\sigma_t^2$, which is modeled by the GARCH component. This structure captures both the conditional mean dynamics (through ARMA) and the conditional variance dynamics (through GARCH).
+
+The VAR captures interactions between the two markets, while the ARMA–GARCH model focuses on the time-varying volatility of stock returns. Together, they provide a more complete picture of both the mean and variance dynamics in the data. Importantly, these two models address different research questions and are not directly comparable: the VAR is evaluated based on its ability to capture cross-market dynamics, while the GARCH is assessed by how well it models volatility persistence. Multivariate GARCH models, such as DCC-GARCH, could extend this analysis further, but they are beyond the scope of this study.
 
 % ============================================
-% 4. ESTIMATION RESULTS
+% 4. RESULTS AND DISCUSSION
 % ============================================
-\section{Estimation Results}
+\section{Estimation}
 
 \subsection{VAR Estimation}
 
-\textbf{Lag Selection:} Information criteria select VAR(1).
+Table~\ref{tab:varlag} shows the results from the lag selection process for the VAR model. All three criteria, the Akaike Information Criterion (AIC), the Hannan–Quinn Criterion (HQ), and the Schwarz Criterion (SC), reach their lowest values at lag one. This suggests that a VAR(1) provides a reasonable and efficient summary of the short-run dynamics. Although the differences between lag orders are small, the consistency across criteria supports using a simpler model. Each criterion balances model fit against complexity by penalizing additional parameters, and lower values indicate a better trade-off between the two.
 
 \begin{table}[H]
 \centering
 \caption{VAR Lag Selection Criteria}
 \label{tab:varlag}
-\begin{tabular}{ccccc}
+\begin{tabular}{cccc}
 \toprule
-Lag & AIC & HQ & SC & FPE \\
+Lag & AIC & HQ & SC \\
 \midrule
-1 & $-$11.52 & $-$11.48 & $-$11.42 & $5.4 \times 10^{-6}$ \\
-2 & $-$11.49 & $-$11.42 & $-$11.31 & $5.6 \times 10^{-6}$ \\
-3 & $-$11.46 & $-$11.35 & $-$11.20 & $5.8 \times 10^{-6}$ \\
+1 & $-$12.82 & $-$12.79 & $-$12.73 \\
+2 & $-$12.81 & $-$12.74 & $-$12.65 \\
+3 & $-$12.79 & $-$12.70 & $-$12.57 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\textbf{VAR(1) Results:}
+Table~\ref{tab:var} presents the estimates for the VAR(1) model. The results show very low \( R^2 \) values and insignificant F-statistics in both equations, indicating that past returns offer little predictive power for future returns. All estimated coefficients are small and statistically insignificant. We retain the full VAR(1) structure rather than dropping individual coefficients for two reasons: first, the lag order was selected by information criteria applied to the system as a whole, not to individual parameters; second, the primary purpose of the VAR is to examine dynamic interactions through impulse responses, which require a complete coefficient matrix. The weak predictability itself is an informative finding, consistent with the view that financial returns are difficult to forecast.
 
 \begin{table}[H]
 \centering
-\caption{VAR(1) Model Summary}
+\caption{VAR(1) Estimation Results}
 \label{tab:var}
-\begin{tabular}{lcc}
+\begin{tabular}{lccccc}
 \toprule
-Equation & $R^2$ & F-statistic \\
+Equation & \( r_{\text{SP500},t-1} \) & \( r_{\text{EUR/USD},t-1} \) & Const. & \( R^2 \) & F-stat \\
 \midrule
-S\&P 500 Returns & 0.012 & 1.89 \\
-EUR/USD Returns & 0.008 & 1.24 \\
+S\&P 500 & 0.023 & $-$0.029 & 0.007 & 0.001 & 0.071 \\
+EUR/USD & $-$0.023 & 0.041 & 0.001 & 0.002 & 0.269 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-The low $R^2$ values are typical for financial returns---markets are largely unpredictable. Cross-equation coefficients indicate whether lagged returns of one variable predict the other.
 
 \subsection{Impulse Response Analysis}
-
-Figure~\ref{fig:irf} shows orthogonalized IRFs with 95\% bootstrap confidence intervals. The ordering assumes EUR/USD is more exogenous (can affect S\&P 500 contemporaneously).
-
 \begin{figure}[H]
-\centering
-\fbox{\parbox{0.8\textwidth}{\centering\vspace{2cm}[IRF Plot: 2$\times$2 grid showing responses of each variable to shocks in both variables over 12 periods]\vspace{2cm}}}
-\caption{Orthogonalized Impulse Response Functions (95\% CI)}
-\label{fig:irf}
+  \centering
+  \includegraphics[scale=0.3]{Images/shock_analysis.png}
+  \caption{Reduced-Form Impulse Response Functions (95\% Bootstrap CI)}
+  \label{fig:irf}
 \end{figure}
 
-\textbf{Interpretation:}
-\begin{itemize}
-    \item Own-shocks decay quickly (1--2 months), consistent with efficient markets.
-    \item Cross-market effects are modest but present, suggesting some information transmission.
-    \item Confidence intervals help assess statistical significance of responses.
-\end{itemize}
+
+Figure~\ref{fig:irf} displays the reduced-form impulse response functions with 95\% bootstrap confidence intervals. Shocks in both return series disappear quickly, usually within a month, and the confidence intervals remain close to zero across all horizons. This indicates that the S\&P 500 and EUR/USD returns do not meaningfully influence each other at the monthly level. Overall, the IRFs show weak persistence and no evidence of spillovers between the two markets.
 
 \subsection{GARCH Estimation}
 
-\textbf{ARCH-LM Test:} We test VAR residuals for ARCH effects (Table~\ref{tab:arch}).
+To determine whether volatility modeling is appropriate, we test for ARCH effects in the VAR residuals. Table~\ref{tab:arch} shows that both series display significant ARCH behavior, which justifies estimating a GARCH model for the S\&P 500 returns.
 
 \begin{table}[H]
 \centering
@@ -312,15 +337,13 @@ Figure~\ref{fig:irf} shows orthogonalized IRFs with 95\% bootstrap confidence in
 \toprule
 Variable & $\chi^2$ Statistic & p-value & Conclusion \\
 \midrule
-S\&P 500 Residuals & 28.45 & 0.005 & ARCH effects present \\
-EUR/USD Residuals & 15.32 & 0.224 & No ARCH effects \\
+S\&P 500 Residuals & 22.14 & 0.036 & ARCH effects present \\
+EUR/USD Residuals & 25.60 & 0.012 & ARCH effects present \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-S\&P 500 exhibits significant ARCH effects, justifying GARCH modeling.
-
-\textbf{ARMA-GARCH Results:} Using \texttt{auto.arima()}, we select ARMA(0,0) for the mean (returns are approximately white noise). The GARCH(1,1) variance equation results:
+Using \texttt{auto.arima()}, the mean equation is selected as ARMA(0,0), meaning the returns behave much like white noise. The GARCH(1,1) variance estimates are shown in Table~\ref{tab:garch}. The coefficients indicate a moderate reaction to recent shocks and a high degree of volatility persistence, with the combined effect (\(\alpha_1 + \beta_1 = 0.973\)) suggesting that shocks fade slowly. The half-life of roughly 25 months highlights how long volatility can remain elevated after large market movements. The half-life solves the equation \((\alpha_1 + \beta_1)^x = 0.5\), (with \(\log_{0.973}(0.5) = x\)) which shows how long it takes for a volatility shock to halve.
 
 \begin{table}[H]
 \centering
@@ -330,73 +353,59 @@ S\&P 500 exhibits significant ARCH effects, justifying GARCH modeling.
 \toprule
 Parameter & Estimate & Std.\ Error & $t$-value & $p$-value \\
 \midrule
-$\omega$ & 0.00003 & 0.00001 & 2.89 & 0.004 \\
-$\alpha_1$ (ARCH) & 0.108 & 0.031 & 3.48 & 0.001 \\
-$\beta_1$ (GARCH) & 0.872 & 0.035 & 24.91 & $<$0.001 \\
+$\omega$ & 0.000119 & 0.000074 & 1.61 & 0.106 \\
+$\alpha_1$ (ARCH) & 0.161 & 0.052 & 3.07 & 0.002 \\
+$\beta_1$ (GARCH) & 0.812 & 0.043 & 19.04 & $<$0.001 \\
 \midrule
-Persistence ($\alpha_1 + \beta_1$) & \multicolumn{4}{c}{0.980} \\
-Half-life (months) & \multicolumn{4}{c}{34.3} \\
+Persistence ($\alpha_1 + \beta_1$) & \multicolumn{4}{c}{0.973} \\
+Half-life (months) & \multicolumn{4}{c}{25.3} \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\textbf{Interpretation:}
-\begin{itemize}
-    \item $\alpha_1 = 0.108$: Moderate reaction to recent shocks (news impact).
-    \item $\beta_1 = 0.872$: High volatility persistence---past volatility strongly predicts current volatility.
-    \item Persistence = 0.980: Volatility shocks decay very slowly (half-life $\approx$ 34 months).
-    \item Stationarity condition $\alpha_1 + \beta_1 < 1$ is satisfied.
-\end{itemize}
+Diagnostic checks confirm that the standardized residuals show no remaining ARCH effects. The standardized residuals are defined as \(\hat{v}_t = \varepsilon_t / \hat{\sigma}_t\), which removes the modeled time-varying volatility from the raw residuals. If the GARCH specification is correct, these standardized residuals should behave like white noise with constant variance. Applying the ARCH-LM test to \(\hat{v}_t\) yields \(p = 0.454\), indicating no remaining ARCH effects and confirming that the model has adequately captured the volatility dynamics.
 
-\textbf{Diagnostics:} ARCH-LM test on standardized residuals yields $p = 0.42$, indicating no remaining ARCH effects---the model is adequate.
+\subsection{Discussion}
+
+Taken together, the results paint a clear picture of how these two markets behave. The VAR and impulse responses show no meaningful spillovers across the S\&P 500 and EUR/USD returns at monthly frequency. Both series appear largely independent in the mean, and their past movements provide almost no predictive power for future returns. This aligns with the broader view that financial returns are difficult to forecast and that markets incorporate information quickly.
+
+Volatility, however, tells a different story. The GARCH results show that volatility shocks in the S\&P 500 decay slowly, which means periods of market turbulence can influence risk for long stretches of time.
+
+Regarding the first research question, whether stock returns and exchange rate returns influence each other dynamically, the evidence indicates that they do not, at least not at the monthly frequency examined here. The VAR estimates and the impulse response functions both show weak interactions. The second research question, how volatility evolves over time, paints a different picture. The GARCH results reveal that S\&P 500 volatility is highly persistent, with shocks to the conditional variance fading only gradually and taking roughly two years to halve. This implies that periods of market stress leave long-lasting effects on risk even when returns themselves show little memory. For investors, the combination of independent returns and persistent volatility suggests potential diversification benefits, but also highlights that elevated risk tends to linger once it appears.
+
+
 
 % ============================================
 % 5. CONCLUSION
 % ============================================
-\section{Conclusion}
+\section{Conclusion and interpretation}
 
-\subsection{Answers to Research Questions}
+The first research question asked whether stock returns and exchange rate returns influence each other dynamically. The results from the VAR model and the impulse response functions provide a clear conclusion: \textbf{there is no meaningful dynamic interaction between the two series at monthly frequency}. Shocks in one market dissipate within a month and do not spill over into the other, and the near-zero $R^2$ values show that past returns offer virtually no predictive power. This aligns with the view that financial markets incorporate information quickly, leaving little room for short-run predictability across markets.
 
-\textbf{1. Do stock and exchange rate returns influence each other dynamically?}
+The second research question examined how volatility evolves over time. Unlike the mean dynamics, the volatility results tell a different story. The GARCH(1,1) \textbf{estimates show strong volatility clustering in S\&P 500 returns}, with a persistence level of about 0.97. This implies that volatility shocks fade only slowly, taking roughly two years to halve. Episodes of market stress, such as the 2008 financial crisis or the 2020 pandemic, therefore leave long-lasting effects on risk even though returns themselves show little memory.
 
-The VAR analysis reveals modest cross-market predictability. Impulse responses show that shocks transmit between markets but decay within 1--2 months. The low $R^2$ values confirm that returns are largely unpredictable, consistent with market efficiency.
+These findings have practical implications. Investors may benefit from the lack of return spillovers, which suggests some diversification potential between U.S.\ equities and the EUR/USD exchange rate. At the same time, the high persistence in volatility means that periods of turbulence should be taken seriously, as elevated risk tends to linger. For risk managers, GARCH-based forecasts can provide more realistic assessments of future volatility, and for policymakers, the results highlight that while returns may not be tightly connected across markets, shifts in volatility may require closer monitoring.
 
-\textbf{2. How does stock market volatility evolve over time?}
+There are also limitations to the analysis, where the bivariate framework excludes other variables, such as interest rates or global risk measures, that could influence both markets. Future work could explore multivariate GARCH models, such as DCC-GARCH, to examine volatility spillovers directly or apply structural approaches to identify causal transmission channels more precisely.
 
-The GARCH(1,1) model confirms strong volatility clustering in S\&P 500 returns. With persistence of 0.98, volatility shocks are highly persistent---elevated volatility following crises (2008, 2020) takes years to dissipate.
 
-\textbf{3. Do exchange rate shocks influence stock volatility?}
 
-The IRF analysis shows exchange rate shocks have modest effects on stock returns. While we model volatility univariately, the VAR captures mean spillovers that may translate to volatility effects through return uncertainty.
-
-\subsection{Implications}
-
-\textbf{For investors:} High volatility persistence implies that current volatility informs future risk. Diversification benefits between stocks and currencies exist but are limited given cross-market linkages.
-
-\textbf{For risk managers:} GARCH forecasts enable superior Value-at-Risk calculations compared to historical volatility. The 34-month half-life suggests prolonged risk adjustments after market stress.
-
-\textbf{For policymakers:} Cross-market spillovers imply that exchange rate interventions may affect equity markets, requiring coordinated financial stability monitoring.
-
-\subsection{Limitations}
-
-Monthly data may obscure high-frequency dynamics. The bivariate system excludes other relevant variables (interest rates, VIX). Future work could employ multivariate GARCH (DCC-GARCH) to model volatility spillovers directly.
 
 % ============================================
 % REFERENCES
 % ============================================
-\newpage
 \bibliographystyle{apalike}
 
 \begin{thebibliography}{9}
 
-\bibitem[Enders(2015)]{enders2015}
-Enders, W. (2015). \textit{Applied Econometric Time Series} (4th ed.). Wiley.
+\bibitem[MacKinnon(1991)]{mackinnon1991}
+MacKinnon, J.~G. (1991). Critical values for cointegration tests. In R.~F. Engle \& C.~W.~J. Granger (Eds.), \textit{Long-run Economic Relationships: Readings in Cointegration} (pp. 267--276). Oxford University Press.
 
 \bibitem[Manasseh et al.(2019)]{manasseh2019}
 Manasseh, C.~O., Abada, F.~C., Okiche, E.~L., et al. (2019). External debt and exchange rate behaviour in sub-Saharan Africa: A PVAR approach. \textit{Cogent Economics \& Finance}, 7(1), 1627164.
 
-\bibitem[Tsay(2010)]{tsay2010}
-Tsay, R.~S. (2010). \textit{Analysis of Financial Time Series} (3rd ed.). Wiley.
+\bibitem[Enders(2015)]{enders2015}
+Enders, W. (2015). \textit{Applied Econometric Time Series} (4th ed.). Wiley.
 
 \end{thebibliography}
 
